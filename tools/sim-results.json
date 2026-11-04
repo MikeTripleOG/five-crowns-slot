@@ -1,179 +1,224 @@
 {
  "92": {
   "target": 0.92,
-  "spins": 30000000,
-  "rtp": 0.9193851166753952,
-  "ci95": 0.001449228658513975,
-  "baseRTP": 0.6504467266587834,
-  "bonusRTP": 0.2689383899997145,
-  "hitFreq": 0.19071906666666666,
-  "bonusRate": 0.023135633333333332,
-  "oneInBonus": 43.22336828182789,
-  "sdPerSpin": 4.049873608423752,
-  "maxWinX": 754.1,
+  "spins": 50000000,
+  "rtp": 0.9184754580815192,
+  "ci95": 0.001413734116533789,
+  "baseRTP": 0.6662539440181179,
+  "bonusRTP": 0.22198221400044188,
+  "jackpotRTP": 0.0302393,
+  "jackpots": 52675,
+  "avgSpinsToFill": 949.2008732795443,
+  "tierCounts": {
+   "mini": 37014,
+   "minor": 11513,
+   "major": 3660,
+   "grand": 488
+  },
+  "tierFreqOneIn": {
+   "mini": 1350.8402226184687,
+   "minor": 4342.916702857639,
+   "major": 13661.20218579235,
+   "grand": 102459.01639344262
+  },
+  "hitFreq": 0.18480284,
+  "bonusRate": 0.01930226,
+  "oneInBonus": 51.807404936002314,
+  "sdPerSpin": 5.100311125488852,
+  "maxWinX": 1032.3,
   "exact": {
-   "baseRTP": 0.6508153975293299,
-   "lineHitRate": 0.16900623885918004,
-   "p3": 0.021415234012462987,
-   "p4": 0.0016655986211163655,
-   "p5": 0.000049719361824369114,
-   "combos": 39099456
+   "baseRTP": 0.6662423214003699,
+   "lineHitRate": 0.16567919860199923,
+   "p3": 0.017982386263849882,
+   "p4": 0.0013224218241847411,
+   "p5": 0.00003796462689601879,
+   "combos": 45396120
   },
   "perHero": {
    "eldenvale": {
-    "simBonusMeanX": 11.628956133441857,
-    "exactBonusMeanX": 11.63762120875468,
-    "bonusSD": 11.246081663201032,
-    "totalRTP_exact": 0.9200000000012432,
-    "totalRTP_sim": 0.9197995720261758
+    "simBonusMeanX": 11.50086520017066,
+    "exactBonusMeanX": 11.50621288093784,
+    "bonusSD": 11.089080163251715,
+    "totalRTP_exact": 0.9199999999999706,
+    "totalRTP_sim": 0.9198965610263391
    },
    "northgard": {
-    "simBonusMeanX": 11.63407663318267,
-    "exactBonusMeanX": 11.637621208697428,
-    "bonusSD": 4.852265138953988,
-    "totalRTP_exact": 0.9199999999999189,
-    "totalRTP_sim": 0.9199180120116731
+    "simBonusMeanX": 11.504294250024863,
+    "exactBonusMeanX": 11.506212880949112,
+    "bonusSD": 4.781289040249778,
+    "totalRTP_exact": 0.9200000000001887,
+    "totalRTP_sim": 0.9199628883582971
    },
    "solenthia": {
-    "simBonusMeanX": 11.62815916677618,
-    "exactBonusMeanX": 11.637621208633574,
-    "bonusSD": 10.675402422905396,
-    "totalRTP_exact": 0.9199999999984418,
-    "totalRTP_sim": 0.9197811377472768
+    "simBonusMeanX": 11.50088285023259,
+    "exactBonusMeanX": 11.506212880861096,
+    "bonusSD": 10.546188192363669,
+    "totalRTP_exact": 0.9199999999984863,
+    "totalRTP_sim": 0.9198969024274755
    },
    "vellorien": {
-    "simBonusMeanX": 11.625088733488107,
-    "exactBonusMeanX": 11.637621208641539,
-    "bonusSD": 15.131783637610093,
-    "totalRTP_exact": 0.9199999999986261,
-    "totalRTP_sim": 0.9197101169304586
+    "simBonusMeanX": 11.499038049950828,
+    "exactBonusMeanX": 11.506212880952472,
+    "bonusSD": 14.939158791559032,
+    "totalRTP_exact": 0.9200000000002537,
+    "totalRTP_sim": 0.9198612188749209
    },
    "drakonia": {
-    "simBonusMeanX": 11.646921566675571,
-    "exactBonusMeanX": 11.637621208750987,
-    "bonusSD": 26.014024249036225,
-    "totalRTP_exact": 0.9200000000011577,
-    "totalRTP_sim": 0.9202151224137082
+    "simBonusMeanX": 11.517332849961885,
+    "exactBonusMeanX": 11.506212880899087,
+    "bonusSD": 25.739773919711343,
+    "totalRTP_exact": 0.9199999999992211,
+    "totalRTP_sim": 0.9202150910333998
    }
   },
-  "secs": 37.493
+  "secs": 56.363
  },
  "94": {
   "target": 0.94,
-  "spins": 30000000,
-  "rtp": 0.9387180333384816,
-  "ci95": 0.001498210605692376,
-  "baseRTP": 0.6494228533254314,
-  "bonusRTP": 0.2892951800006749,
-  "hitFreq": 0.19085946666666667,
-  "bonusRate": 0.0231775,
-  "oneInBonus": 43.1452917700356,
-  "sdPerSpin": 4.186753799138736,
-  "maxWinX": 433.2,
+  "spins": 50000000,
+  "rtp": 0.9399147340892039,
+  "ci95": 0.0014567932300785227,
+  "baseRTP": 0.6663540040180996,
+  "bonusRTP": 0.24255742999931063,
+  "jackpotRTP": 0.0310033,
+  "jackpots": 52922,
+  "avgSpinsToFill": 944.768017081743,
+  "tierCounts": {
+   "mini": 36809,
+   "minor": 11735,
+   "major": 3877,
+   "grand": 501
+  },
+  "tierFreqOneIn": {
+   "mini": 1358.3634437230025,
+   "minor": 4260.758414997869,
+   "major": 12896.569512509672,
+   "grand": 99800.39920159681
+  },
+  "hitFreq": 0.18493618,
+  "bonusRate": 0.01936152,
+  "oneInBonus": 51.64883748796582,
+  "sdPerSpin": 5.2556549580366205,
+  "maxWinX": 1042,
   "exact": {
-   "baseRTP": 0.6508153975293299,
-   "lineHitRate": 0.16900623885918004,
-   "p3": 0.021415234012462987,
-   "p4": 0.0016655986211163655,
-   "p5": 0.000049719361824369114,
-   "combos": 39099456
+   "baseRTP": 0.6662423214003699,
+   "lineHitRate": 0.16567919860199923,
+   "p3": 0.017982386263849882,
+   "p4": 0.0013224218241847411,
+   "p5": 0.00003796462689601879,
+   "combos": 45396120
   },
   "perHero": {
    "eldenvale": {
-    "simBonusMeanX": 12.494018933221865,
-    "exactBonusMeanX": 12.502278481267089,
-    "bonusSD": 12.055645211858483,
-    "totalRTP_exact": 0.9400000000012954,
-    "totalRTP_sim": 0.9398089520957769
+    "simBonusMeanX": 12.525481749687325,
+    "exactBonusMeanX": 12.540190806239844,
+    "bonusSD": 12.073695603343117,
+    "totalRTP_exact": 0.9400000000013429,
+    "totalRTP_sim": 0.9397154860635965
    },
    "northgard": {
-    "simBonusMeanX": 12.499350066807068,
-    "exactBonusMeanX": 12.502278481182284,
-    "bonusSD": 5.202028641157389,
-    "totalRTP_exact": 0.9399999999993338,
-    "totalRTP_sim": 0.9399322641583638
+    "simBonusMeanX": 12.535033300058856,
+    "exactBonusMeanX": 12.540190806200114,
+    "bonusSD": 5.195306658630742,
+    "totalRTP_exact": 0.9400000000005744,
+    "totalRTP_sim": 0.9399002395315081
    },
    "solenthia": {
-    "simBonusMeanX": 12.493988966630374,
-    "exactBonusMeanX": 12.502278481224213,
-    "bonusSD": 11.447960042078746,
-    "totalRTP_exact": 0.9400000000003037,
-    "totalRTP_sim": 0.9398082589519742
+    "simBonusMeanX": 12.525766699993595,
+    "exactBonusMeanX": 12.540190806147756,
+    "bonusSD": 11.461100342593635,
+    "totalRTP_exact": 0.9399999999995616,
+    "totalRTP_sim": 0.9397209977926057
    },
    "vellorien": {
-    "simBonusMeanX": 12.492450766545693,
-    "exactBonusMeanX": 12.502278481204064,
-    "bonusSD": 16.242761774898522,
-    "totalRTP_exact": 0.9399999999998376,
-    "totalRTP_sim": 0.9397726795349362
+    "simBonusMeanX": 12.52150799965258,
+    "exactBonusMeanX": 12.54019080625503,
+    "bonusSD": 16.259695466575725,
+    "totalRTP_exact": 0.9400000000016366,
+    "totalRTP_sim": 0.9396386227198484
    },
    "drakonia": {
-    "simBonusMeanX": 12.53072816670954,
-    "exactBonusMeanX": 12.502278481210869,
-    "bonusSD": 28.06490787417092,
-    "totalRTP_exact": 0.9399999999999951,
-    "totalRTP_sim": 0.940658056929675
+    "simBonusMeanX": 12.57852174990218,
+    "exactBonusMeanX": 12.540190806133891,
+    "bonusSD": 28.163780100343295,
+    "totalRTP_exact": 0.9399999999992934,
+    "totalRTP_sim": 0.9407414267325522
    }
   },
-  "secs": 38.282
+  "secs": 55.522
  },
  "96": {
   "target": 0.96,
-  "spins": 30000000,
-  "rtp": 0.9600609033434148,
-  "ci95": 0.0015653852704927852,
-  "baseRTP": 0.6512328733254815,
-  "bonusRTP": 0.3088280299999252,
-  "hitFreq": 0.19082846666666667,
-  "bonusRate": 0.0230939,
-  "oneInBonus": 43.30147787944003,
-  "sdPerSpin": 4.374473590996043,
-  "maxWinX": 866.1,
+  "spins": 50000000,
+  "rtp": 0.9597091160861355,
+  "ci95": 0.0014929519391357797,
+  "baseRTP": 0.6664794160180969,
+  "bonusRTP": 0.2627230000013843,
+  "jackpotRTP": 0.0305067,
+  "jackpots": 52731,
+  "avgSpinsToFill": 948.1950465570537,
+  "tierCounts": {
+   "mini": 37086,
+   "minor": 11503,
+   "major": 3639,
+   "grand": 503
+  },
+  "tierFreqOneIn": {
+   "mini": 1348.2176562584264,
+   "minor": 4346.692167260715,
+   "major": 13740.038472107723,
+   "grand": 99403.57852882704
+  },
+  "hitFreq": 0.18482696,
+  "bonusRate": 0.0193364,
+  "oneInBonus": 51.71593471380402,
+  "sdPerSpin": 5.386104286472018,
+  "maxWinX": 1025.4,
   "exact": {
-   "baseRTP": 0.6508153975293299,
-   "lineHitRate": 0.16900623885918004,
-   "p3": 0.021415234012462987,
-   "p4": 0.0016655986211163655,
-   "p5": 0.000049719361824369114,
-   "combos": 39099456
+   "baseRTP": 0.6662423214003699,
+   "lineHitRate": 0.16567919860199923,
+   "p3": 0.017982386263849882,
+   "p4": 0.0013224218241847411,
+   "p5": 0.00003796462689601879,
+   "combos": 45396120
   },
   "perHero": {
    "eldenvale": {
-    "simBonusMeanX": 13.367854499994296,
-    "exactBonusMeanX": 13.366935753674893,
-    "bonusSD": 12.925448697981976,
-    "totalRTP_exact": 0.959999999998928,
-    "totalRTP_sim": 0.9600212511084396
+    "simBonusMeanX": 13.577412300001209,
+    "exactBonusMeanX": 13.574168731368864,
+    "bonusSD": 13.103860323385597,
+    "totalRTP_exact": 0.9599999999993691,
+    "totalRTP_sim": 0.9600627396102097
    },
    "northgard": {
-    "simBonusMeanX": 13.36598453331001,
-    "exactBonusMeanX": 13.36693575373835,
-    "bonusSD": 5.580694333413504,
-    "totalRTP_exact": 0.9600000000003959,
-    "totalRTP_sim": 0.959977997746819
+    "simBonusMeanX": 13.573351749714442,
+    "exactBonusMeanX": 13.574168731404209,
+    "bonusSD": 5.6256699675988,
+    "totalRTP_exact": 0.9600000000000528,
+    "totalRTP_sim": 0.9599841973089154
    },
    "solenthia": {
-    "simBonusMeanX": 13.367163599985822,
-    "exactBonusMeanX": 13.366935753747233,
-    "bonusSD": 12.27996685783343,
-    "totalRTP_exact": 0.9600000000006013,
-    "totalRTP_sim": 0.96000527020987
+    "simBonusMeanX": 13.576945149986985,
+    "exactBonusMeanX": 13.57416873139164,
+    "bonusSD": 12.448962861919819,
+    "totalRTP_exact": 0.9599999999998097,
+    "totalRTP_sim": 0.9600537036336609
    },
    "vellorien": {
-    "simBonusMeanX": 13.368127799869605,
-    "exactBonusMeanX": 13.366935753758813,
-    "bonusSD": 17.39022221544523,
-    "totalRTP_exact": 0.9600000000008692,
-    "totalRTP_sim": 0.9600275726854157
+    "simBonusMeanX": 13.57907354984224,
+    "exactBonusMeanX": 13.574168731481565,
+    "bonusSD": 17.64677207892246,
+    "totalRTP_exact": 0.9600000000015491,
+    "totalRTP_sim": 0.9600948727883076
    },
    "drakonia": {
-    "simBonusMeanX": 13.37915183347882,
-    "exactBonusMeanX": 13.366935753732646,
-    "bonusSD": 29.887892700061737,
-    "totalRTP_exact": 0.960000000000264,
-    "totalRTP_sim": 0.9602825646680129
+    "simBonusMeanX": 13.591487299734382,
+    "exactBonusMeanX": 13.574168731455586,
+    "bonusSD": 30.348438374129348,
+    "totalRTP_exact": 0.9600000000010465,
+    "totalRTP_sim": 0.9603349891310113
    }
   },
-  "secs": 32.592
+  "secs": 52.587
  }
 }

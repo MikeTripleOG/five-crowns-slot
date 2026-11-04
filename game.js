@@ -1,67 +1,92 @@
 (() => {
 'use strict';
-const M = window.SlotMath, CONFIGS = window.SlotConfigs;
+const M = window.SlotMath, CONFIGS = window.SlotConfigs, F = window.FC_FEATURES, A = window.FCAudio, FX = window.FCFX;
 const qs = new URLSearchParams(location.search);
 const cfg = CONFIGS[qs.get('rtp')] || CONFIGS[96];
-let forceBonus = qs.get('forceBonus') === '1';
+const fb = qs.get('forceBonus'); let forceBonus = fb ? Math.min(5, Math.max(3, +fb === 1 ? 3 : +fb || 3)) : 0;
 const BETS = [1, 2, 5, 10, 20, 50], START = 1000;
+const TIERS = [[50, 'epic', 3], [25, 'mega', 2], [10, 'big', 1]];            // win x bet thresholds -> title art / fanfare tier
 const HERO_COLORS = { eldenvale: '#3fd46a', northgard: '#4a8cff', solenthia: '#ffc531', vellorien: '#b45cff', drakonia: '#ff3b30' };
 const LINE_COLORS = ['#ffd23a', '#3fd46a', '#4ab0ff', '#ff5ad1', '#ff7a1a'];
-const SYM_SRC = k => 'assets/symbols/' + M.SYMBOLS[k].file;   // tiles are loaded by FILE NAME: swap a PNG, no code change
-// ---- uncertified RNG: crypto.getRandomValues ----
-const buf = new Uint32Array(1);
-const rng = () => (crypto.getRandomValues(buf), buf[0] / 4294967296);
+const CHAMPION = 'Vorrhak, Warlord of the Crimson Horde';
+const INTRO_VIDEO_CUT = 3.4;   // s: crossfade out of load_intro before its baked mock-UI (with a $ balance) appears
+const BONUS_VIDEO_START = 0.5; // s: skip the clip's baked mock reel frames
+const RM = FX.RM;
+const JP_COLORS = { mini: '#3fd46a', minor: '#4a8cff', major: '#b45cff', grand: '#ff3b30' };
+const JP_LEVEL = { mini: 0, minor: 1, major: 2, grand: 3 };
+const fj = (qs.get('forceJackpot') || '').toLowerCase(); let forceJackpot = M.JP_TIERS.includes(fj) ? fj : null;
+const SYM_SRC = k => 'assets/symbols/' + M.SYMBOLS[k].file;   // tiles load BY FILE NAME: swap a PNG, no code change
+
+// ---- outcome RNG: crypto.getRandomValues (uncertified). ?seed=N = deterministic xorshift for tests only. Cosmetics use Math.random. ----
+let rng;
+if (qs.get('seed')) { let a = +qs.get('seed') >>> 0 || 1, b = 0x9E3779B9, c = 0x85EBCA6B, d = 0xC2B2AE35; rng = () => { const t = a ^ (a << 11); a = b; b = c; c = d; d = (d ^ (d >>> 19) ^ (t ^ (t >>> 8))) >>> 0; return d / 4294967296; }; }
+else { const buf = new Uint32Array(1); rng = () => (crypto.getRandomValues(buf), buf[0] / 4294967296); }
 
 const $ = id => document.getElementById(id);
-let state = { balance: START, betIdx: 2, spinning: false, inBonus: false, spins: 0, lastWin: 0 };
-try { const s = JSON.parse(localStorage.getItem('fiveCrownsDemo') || 'null'); if (s && typeof s.balance === 'number') { state.balance = s.balance; state.betIdx = s.betIdx ?? 2; } } catch (e) {}
-const save = () => { try { localStorage.setItem('fiveCrownsDemo', JSON.stringify({ balance: state.balance, betIdx: state.betIdx })); } catch (e) {} };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
 const fmt = n => (Math.round(n * 100) / 100).toLocaleString('en-US', { maximumFractionDigits: 2 });
+const state = { balance: START, betIdx: 2, spinning: false, inBonus: false, spins: 0, hits: 0, turbo: false, auto: null, history: [], log: [], phases: [] };
+try { const s = JSON.parse(localStorage.getItem('fiveCrownsDemo') || 'null'); if (s && typeof s.balance === 'number') Object.assign(state, { balance: s.balance, betIdx: s.betIdx ?? 2 }); } catch (e) {}
+const save = () => { try { localStorage.setItem('fiveCrownsDemo', JSON.stringify({ balance: state.balance, betIdx: state.betIdx })); } catch (e) {} };
 const bet = () => BETS[state.betIdx];
+// ---- Crown Collector meters: persisted per BET LEVEL (a near-full meter cannot be carried to a bigger bet) ----
+const METER_KEY = 'fcCrowns';
+let meters = {}; try { meters = JSON.parse(localStorage.getItem(METER_KEY) || '{}') || {}; } catch (e) {}
+const meterOf = i => (Array.isArray(meters[i]) && meters[i].length === 5 ? meters[i] : [false, false, false, false, false]).map(Boolean);
+const saveMeters = () => { try { localStorage.setItem(METER_KEY, JSON.stringify(meters)); } catch (e) {} };
+if (qs.get('crowns')) { const n = Math.max(0, Math.min(4, +qs.get('crowns') | 0)); meters[state.betIdx] = [0, 1, 2, 3, 4].map(r => r < n); saveMeters(); }
+window.__game = { meters: () => meterOf(state.betIdx), state, cfg, get balance() { return state.balance; }, audio: () => A.state(), loaded: {}, introDone: false, F };
+
+// ---------- balance count-up ----------
+let shownBal = state.balance, balCtl = {};
 function ui() {
-  $('balance').textContent = fmt(state.balance); $('bet').textContent = bet();
-  $('spin').disabled = state.spinning || state.inBonus;
-  $('variant').textContent = `Math variant: ${cfg.id}% RTP · uncertified`;
+  $('bet').textContent = bet();
+  const sp = $('spin');
+  sp.disabled = state.inBonus || (state.spinning && !F.quickStop && !state.auto);
+  sp.textContent = state.auto ? `STOP ${state.auto.left}` : state.spinning && F.quickStop ? 'STOP' : 'SPIN';
+  sp.classList.toggle('stop', !!state.auto || (state.spinning && F.quickStop)); sp.classList.toggle('auto', !!state.auto);
+  sp.setAttribute('aria-label', sp.textContent);
+  $('counter').textContent = `Spins ${state.spins} · Hits ${state.hits}${state.spins ? ` (${(100 * state.hits / state.spins).toFixed(1)}%)` : ''}`;
+  $('variant').textContent = `Math ${cfg.id}% RTP · uncertified`;
+  renderMeters(); renderLadder();
+  $('turboBtn').setAttribute('aria-pressed', state.turbo); $('autoBtn').classList.toggle('on', !!state.auto);
 }
-window.__game = { state, cfg, get balance() { return state.balance; } };
+function renderMeters(m = meterOf(state.betIdx)) {
+  document.querySelectorAll('#crowns i').forEach((el, r) => { el.classList.toggle('on', !!m[r]); });
+}
+function renderLadder() {
+  const L = $('ladder'); if (!L) return;
+  L.innerHTML = [...M.JP_TIERS].reverse().map(t => `<div class="plq" data-t="${t}"><img src="assets/jackpot/plaque_${t}.webp" alt="${t.toUpperCase()}"><b>${fmt(cfg.jackpot.tiers[t].x * bet())}</b></div>`).join('');
+}
+function setBalance(v, animate = true) {
+  const from = shownBal; state.balance = Math.round(v * 100) / 100; save(); shownBal = state.balance;
+  balCtl.skip = true; balCtl = {};
+  if (!animate || state.balance <= from || RM) { $('balance').textContent = fmt(state.balance); return; }
+  FX.countUp($('balance'), from, state.balance, Math.min(1500, 300 + (state.balance - from) * 8), fmt, null, balCtl);
+}
 
-// ---- audio (procedural WebAudio) ----
-let ac = null, master = null, muted = localStorage.getItem('fiveCrownsMute') === '1';
-function audio() {
-  if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); master = ac.createGain(); master.gain.value = muted ? 0 : 0.5; master.connect(ac.destination); } catch (e) { ac = null; } }
-  if (ac && ac.state === 'suspended') ac.resume();
-  return ac;
+// ---------- background alignment + orientation crossfade ----------
+const BG = { L: { w: 1280, h: 720, band: 0.63 }, P: { w: 900, h: 1600, band: 0.57 } };
+let lastOrient = null;
+function layout() {
+  const vw = innerWidth, vh = innerHeight, portrait = vh >= vw, o = portrait ? 'portrait' : 'landscape';
+  if (lastOrient && lastOrient !== o) { $('app').classList.add('orient'); setTimeout(() => $('app').classList.remove('orient'), 450); }
+  lastOrient = o; document.body.classList.toggle('portrait', portrait); document.body.classList.toggle('landscape', !portrait);
+  const r = $('machine').getBoundingClientRect(), cy = r.top + r.height * 0.53 + scrollY * 0;
+  for (const [k, b] of Object.entries(BG)) {
+    const el = $('bg' + k); let s = Math.max(vw / b.w, vh / b.h);
+    let y = cy - b.band * b.h * s; y = Math.min(0, Math.max(vh - b.h * s, y));
+    el.style.backgroundSize = `${b.w * s}px ${b.h * s}px`; el.style.backgroundPosition = `${(vw - b.w * s) / 2}px ${y}px`;
+  }
+  sizeCells();
 }
-function tone(freq, dur, type = 'sine', vol = 0.3, when = 0, slide = 0) {
-  if (!audio()) return; const t = ac.currentTime + when, o = ac.createOscillator(), g = ac.createGain();
-  o.type = type; o.frequency.setValueAtTime(freq, t); if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, freq * slide), t + dur);
-  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
-  o.connect(g).connect(master); o.start(t); o.stop(t + dur + 0.05);
-}
-function noise(dur, vol = 0.3, when = 0, hp = 800) {
-  if (!audio()) return; const t = ac.currentTime + when, len = Math.ceil(ac.sampleRate * dur), b = ac.createBuffer(1, len, ac.sampleRate), d = b.getChannelData(0);
-  for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len);
-  const s = ac.createBufferSource(), f = ac.createBiquadFilter(), g = ac.createGain(); s.buffer = b; f.type = 'highpass'; f.frequency.value = hp; g.gain.value = vol;
-  s.connect(f).connect(g).connect(master); s.start(t);
-}
-const sfx = {
-  spin() { for (let i = 0; i < 6; i++) tone(300 + i * 40, 0.05, 'square', 0.04, i * 0.06); },
-  stop(i) { tone(120 - i * 6, 0.12, 'triangle', 0.35); noise(0.05, 0.12, 0, 2000); },
-  antic() { tone(220, 1.1, 'sawtooth', 0.06, 0, 2.2); },
-  banner() { [523, 659, 784].forEach((f, i) => tone(f, 0.25, 'triangle', 0.2, i * 0.08)); },
-  win(x) { const n = Math.min(8, 3 + Math.floor(x)); for (let i = 0; i < n; i++) tone(660 * Math.pow(1.122, i % 5), 0.18, 'triangle', 0.18, i * 0.07); },
-  drumroll(sec) { for (let t = 0; t < sec; t += 0.045) noise(0.04, 0.08 + 0.25 * t / sec, t, 200); tone(98, 0.6, 'sine', 0.6, sec); noise(0.5, 0.5, sec, 100); },
-  fanfare() { [392, 523, 659, 784, 1046].forEach((f, i) => { tone(f, 0.35, 'sawtooth', 0.09, i * 0.12); tone(f / 2, 0.35, 'square', 0.05, i * 0.12); }); },
-  clash() { noise(0.25, 0.45, 0, 1500); tone(1800, 0.3, 'square', 0.06, 0, 0.4); tone(90, 0.25, 'sine', 0.5); },
-  miss() { tone(200, 0.3, 'sawtooth', 0.12, 0, 0.5); },
-  kill() { noise(0.6, 0.6, 0, 300); tone(60, 0.8, 'sine', 0.7); sfx.fanfare(); },
-};
-function setMute(m) { muted = m; localStorage.setItem('fiveCrownsMute', m ? '1' : '0'); $('mute').textContent = m ? '🔇' : '🔊'; $('mute').setAttribute('aria-label', m ? 'Unmute sound' : 'Mute sound'); if (master) master.gain.value = m ? 0 : 0.5; }
+addEventListener('resize', () => requestAnimationFrame(layout)); addEventListener('orientationchange', () => setTimeout(layout, 200));
 
-// ---- reels ----
+// ---------- reels ----------
 const reelEls = [], stripEls = [];
-let current = [0, 1, 2, 3, 4].map(r => [0, 1, 2].map(y => cfg.strips[r][(y * 3 + r) % cfg.strips[r].length]));
-function cellHTML(k) { return `<div class="cell" data-s="${k}"><img src="${SYM_SRC(k)}" alt="${M.SYMBOLS[k].name}" draggable="false"></div>`; }
+let current = [0, 1, 2, 3, 4].map(r => [0, 1, 2].map(y => cfg.strips[r][(y * 5 + r * 3) % cfg.strips[r].length]));
+const isCrest = k => M.SYMBOLS[k].kind === 'high';
+function cellHTML(k) { return `<div class="cell${isCrest(k) ? ' crest' : ''}" data-s="${k}"><img src="${SYM_SRC(k)}" alt="${M.SYMBOLS[k].name}" draggable="false" decoding="async"></div>`; }
 function buildReels() {
   const root = $('reels'); root.innerHTML = '';
   for (let r = 0; r < 5; r++) {
@@ -69,163 +94,415 @@ function buildReels() {
     const strip = document.createElement('div'); strip.className = 'strip'; strip.innerHTML = current[r].map(cellHTML).join('');
     reel.appendChild(strip); root.appendChild(reel); reelEls.push(reel); stripEls.push(strip);
   }
-  sizeCells();
 }
-function sizeCells() { const h = reelEls[0].clientHeight / 3; reelEls.forEach(r => r.style.setProperty('--ch', h + 'px')); }
-addEventListener('resize', sizeCells);
+function sizeCells() { if (!reelEls[0]) return; const h = reelEls[0].clientHeight / 3; reelEls.forEach(r => r.style.setProperty('--ch', h + 'px')); }
 
-function spinReel(r, finalSyms, dur, antic) {
+let spinCtl = null;
+function spinReel(r, finalSyms, dur, antic, ctl) {
   return new Promise(res => {
-    const strip = stripEls[r], reel = reelEls[r], ch = reel.clientHeight / 3, K = 14 + r * 3 + (antic ? 12 : 0);
-    const filler = []; for (let i = 0; i < K; i++) filler.push(cfg.strips[r][Math.floor(rng() * cfg.strips[r].length)]);
+    const strip = stripEls[r], reel = reelEls[r], ch = reel.clientHeight / 3, K = Math.round(10 + dur / 90);
+    const filler = []; for (let i = 0; i < K; i++) filler.push(cfg.strips[r][Math.floor(Math.random() * cfg.strips[r].length)]); // cosmetic only
     strip.innerHTML = [...finalSyms, ...filler, ...current[r]].map(cellHTML).join('');
-    const from = -(K + 3) * ch;
-    reel.classList.add('blur'); if (antic) setTimeout(() => { reel.classList.add('antic'); sfx.antic(); }, Math.max(0, dur - 1400));
-    const anim = strip.animate([{ transform: `translateY(${from}px)` }, { transform: `translateY(${ch * 0.12}px)`, offset: 0.92 }, { transform: 'translateY(0px)' }],
-      { duration: dur, easing: antic ? 'cubic-bezier(.25,.6,.2,1)' : 'cubic-bezier(.2,.75,.25,1)', fill: 'forwards' });
-    setTimeout(() => reel.classList.remove('blur'), dur * 0.75);
-    anim.onfinish = () => { strip.innerHTML = finalSyms.map(cellHTML).join(''); anim.cancel(); reel.classList.remove('antic'); sfx.stop(r);
-      if (finalSyms.includes('B')) { strip.querySelectorAll('[data-s="B"]').forEach(c => c.classList.add('banner')); sfx.banner(); }
-      res(); };
+    reel.classList.add('spinning');
+    if (antic) ctl.timers.push(setTimeout(() => { if (!ctl.quick) { reel.classList.add('antic'); A.sfx.tension(Math.min(1.6, (dur - (dur - 1500)) / 1000)); } }, Math.max(0, dur - 1500)));
+    const anim = strip.animate([{ transform: `translate3d(0,${-(K + 3) * ch}px,0)` }, { transform: `translate3d(0,${ch * 0.14}px,0)`, offset: 0.93 }, { transform: 'translate3d(0,0,0)' }],
+      { duration: dur, easing: antic ? 'cubic-bezier(.3,.55,.25,1)' : 'cubic-bezier(.2,.75,.25,1)', fill: 'forwards' });
+    ctl.anims.push(anim);
+    ctl.timers.push(setTimeout(() => reel.classList.remove('spinning'), dur * 0.8));
+    anim.onfinish = () => {
+      strip.innerHTML = finalSyms.map(cellHTML).join(''); anim.cancel(); reel.classList.remove('antic', 'spinning');
+      if (!ctl.quick || !ctl.thudded) { A.sfx.thud(r); if (ctl.quick) ctl.thudded = true; }
+      strip.querySelectorAll('.cell').forEach(c => c.classList.add('land'));
+      if (finalSyms.includes('B')) { strip.querySelectorAll('[data-s="B"]').forEach(c => c.classList.add('banner')); A.sfx.bannerFlash(); }
+      res();
+    };
   });
 }
-
-function forcedResult() {
-  // a real reachable stop combination with banners on reels 1,3,5 (row 2): still a PAID spin
-  const stops = [0, 1, 2, 3, 4].map(r => { const L = cfg.strips[r].length; if (r % 2) return Math.floor(rng() * L); const i = cfg.strips[r].indexOf('B'); return (i - 1 + L) % L; });
+function quickStop() {
+  if (!spinCtl || spinCtl.quick || !F.quickStop) return;
+  spinCtl.quick = true; spinCtl.timers.forEach(clearTimeout);
+  reelEls.forEach(r => r.classList.remove('antic'));
+  spinCtl.anims.forEach(a => { try { a.finish(); } catch (e) {} });
+}
+function forcedResult(n) {
+  // a real, reachable stop combination with n banners (one per chosen reel, middle row). Still a PAID spin.
+  const reels = n >= 5 ? [0, 1, 2, 3, 4] : n === 4 ? [0, 1, 2, 4] : [0, 2, 4];
+  const stops = [0, 1, 2, 3, 4].map(r => { const L = cfg.strips[r].length; if (!reels.includes(r)) { let s; do { s = Math.floor(rng() * L); } while ([0, 1, 2].some(d => cfg.strips[r][(s + d) % L] === 'B')); return s; } return (cfg.strips[r].indexOf('B') - 1 + L) % L; });
   const grid = stops.map((st, r) => [0, 1, 2].map(d => cfg.strips[r][(st + d) % cfg.strips[r].length]));
   return M.evaluate(cfg, grid, stops);
 }
 
+function forcedCrownResult() {
+  // a real, reachable stop combination: CROWN visible on every reel whose crown is still unlit (no banners). Still a PAID spin.
+  const m = meterOf(state.betIdx);
+  const stops = [0, 1, 2, 3, 4].map(r => { const S = cfg.strips[r], L = S.length; if (!m[r]) return (S.indexOf('C') - 1 + L) % L;
+    let s; do { s = Math.floor(rng() * L); } while ([0, 1, 2].some(d => S[(s + d) % L] === 'B' || S[(s + d) % L] === 'C')); return s; });
+  const grid = stops.map((st, r) => [0, 1, 2].map(d => cfg.strips[r][(st + d) % cfg.strips[r].length]));
+  return M.evaluate(cfg, grid, stops);
+}
+// ---------- win presentation ----------
 function drawLines(wins) {
   const svg = $('lines'); svg.innerHTML = '';
-  for (const w of wins) {
+  wins.forEach((w, i) => {
     const pts = M.PAYLINES[w.line].slice(0, w.count).map((row, r) => `${r * 100 + 50},${row * 100 + 50}`).join(' ');
-    svg.insertAdjacentHTML('beforeend', `<polyline points="${pts}" stroke="${LINE_COLORS[w.line]}"/>`);
-    M.PAYLINES[w.line].slice(0, w.count).forEach((row, r) => stripEls[r].children[row]?.classList.add('win'));
-  }
+    svg.insertAdjacentHTML('beforeend', `<polyline class="glow draw" style="animation-delay:${i * .15}s" points="${pts}" stroke="${LINE_COLORS[w.line]}" pathLength="1000"/><polyline class="core draw" style="animation-delay:${i * .15}s" points="${pts}" pathLength="1000"/>`);
+  });
+  const winCells = new Set();
+  wins.forEach(w => M.PAYLINES[w.line].slice(0, w.count).forEach((row, r) => winCells.add(r + ':' + row)));
+  stripEls.forEach((s, r) => [...s.children].forEach((c, y) => c.classList.toggle(winCells.has(r + ':' + y) ? 'win' : 'dim', true)));
+  // dragon wild breathes fire up its reel when part of a win
+  const wildReels = new Set(); wins.forEach(w => M.PAYLINES[w.line].slice(0, w.count).forEach((row, r) => { if (current[r][row] === 'W') wildReels.add(r); }));
+  wildReels.forEach(r => { if (RM) return; const f = document.createElement('div'); f.className = 'firecol'; reelEls[r].appendChild(f); setTimeout(() => f.remove(), 1400); A.sfx.roar(); });
 }
-function clearWins() { $('lines').innerHTML = ''; document.querySelectorAll('.cell.win').forEach(c => c.classList.remove('win')); $('winMsg').classList.remove('show'); }
-function showWin(text, ms = 1600) { const m = $('winMsg'); m.textContent = text; m.classList.add('show'); if (ms) setTimeout(() => m.classList.remove('show'), ms); }
-const sleep = ms => new Promise(r => setTimeout(r, ms));
+function clearWins() { $('lines').innerHTML = ''; document.querySelectorAll('.cell.win,.cell.dim').forEach(c => c.classList.remove('win', 'dim')); $('winBanner').classList.remove('show'); }
+function banner(text) { const b = $('winBanner'); b.textContent = text; b.classList.add('show'); }
+const tierOf = x => TIERS.find(t => x >= t[0]);
+async function celebrate(tier, amount) {
+  const [, name, level] = tier, c = $('celebrate'), ctl = {};
+  c.innerHTML = `<img src="assets/${name}_win.webp" alt="${name.toUpperCase()} WIN"><div class="amt">0</div><div class="note">Tap to skip</div>`;
+  c.classList.remove('hidden'); c.onclick = () => { ctl.skip = true; };
+  A.sfx.drumroll(0.5); A.duck(0.25, 2.5); FX.flash(level >= 3 ? '#ffb040' : '#fff', 450);
+  await sleep(450); A.sfx.fanfare(level); FX.coins(60 + level * 60, 'shower'); FX.coins(40 + level * 20, 'burst'); if (level >= 2) FX.shake(document.body, 8 + level * 3);
+  await FX.countUp(c.querySelector('.amt'), 0, amount, 1200 + level * 900, fmt, () => A.sfx.tick(), ctl);
+  FX.flash('#fff', 300, 0.5);
+  await Promise.race([sleep(ctl.skip ? 300 : 1500), new Promise(r => c.onclick = r)]);
+  c.classList.add('hidden'); c.innerHTML = '';
+}
 
+// ---------- spin ----------
 async function doSpin() {
   if (state.spinning || state.inBonus) return;
-  audio();
-  if (state.balance < bet()) { $('status').textContent = 'Not enough demo credits - lower the bet or tap Reset.'; return; }
-  state.spinning = true; state.balance -= bet(); state.spins++; save(); ui(); clearWins();
-  $('status').textContent = 'Spinning...'; sfx.spin();
-  const res = forceBonus ? forcedResult() : M.spin(cfg, rng); forceBonus = false;
-  // schedule: anticipation on later reels once 2 banners have landed
-  let landed = 0, t = 650; const jobs = [];
+  if (state.balance < bet()) { $('status').textContent = 'Not enough demo credits - lower the bet or tap Reset.'; stopAuto('balance'); return; }
+  A.init();
+  state.spinning = true; setBalance(state.balance - bet(), false); state.spins++; clearWins(); ui();
+  $('status').textContent = 'Spinning...'; A.sfx.whoosh(state.turbo ? 0.4 : 0.8);
+  const res = forceBonus ? forcedResult(forceBonus) : forceJackpot ? forcedCrownResult() : M.spin(cfg, rng); forceBonus = 0;   // OUTCOME DECIDED HERE, before any animation
+  // crowns + jackpot are part of the same decision: meter update and (if it fills) the jackpot award are fixed now
+  const spinBet = state.betIdx, before = meterOf(spinBet), cr = M.applyCrowns(before, res.crownReels);
+  const jp = cr.full ? M.playJackpot(cfg, rng, forceJackpot) : null; if (cr.full) forceJackpot = null;
+  meters[spinBet] = cr.full ? [false, false, false, false, false] : cr.meter; saveMeters();
+  res.crowns = cr.newly; res.jackpot = jp;
+  const ctl = spinCtl = { anims: [], timers: [], quick: false };
+  const k = state.turbo ? 0.45 : 1; let landed = 0, t = 620 * k; const jobs = [];
   for (let r = 0; r < 5; r++) {
-    const antic = landed >= 2; t += antic ? 1500 : 260;
-    jobs.push(spinReel(r, res.grid[r], t, antic));
+    const antic = landed >= 2 && !state.turbo; t += antic ? 1500 : 240 * k;
+    jobs.push(spinReel(r, res.grid[r], RM ? 250 + r * 60 : t, antic && !RM, ctl));
     if (res.grid[r].includes('B')) landed++;
   }
-  await Promise.all(jobs); current = res.grid;
+  await Promise.all(jobs); spinCtl = null; current = res.grid;
+  if (cr.newly.length) {   // crowns fly up into their reel's meter
+    cr.newly.forEach(r => { const c = stripEls[r] && [...stripEls[r].children].find(x => x.dataset.s === 'C'); c && c.classList.add('bflash'); });
+    renderMeters(cr.meter); cr.newly.forEach((r, i) => { const el = document.querySelectorAll('#crowns i')[r]; el.classList.remove('lit'); void el.offsetWidth; el.classList.add('lit'); setTimeout(() => A.sfx.gem(), i * 90); });
+    $('status').textContent = cr.full ? 'ALL 5 CROWNS LIT! PICK JACKPOT!' : `Crown collected! ${cr.meter.filter(Boolean).length} of 5`;
+    await sleep(state.turbo ? 200 : 450);
+  }
   const lineWin = Math.round(res.lineWinX * bet() * 100) / 100;
-  if (lineWin > 0) {
-    drawLines(res.wins); const x = res.lineWinX;
-    if (x >= 10) { $('status').textContent = 'BIG WIN!'; sfx.drumroll(1.2); await sleep(1250); coinBurst(160); showWin(`BIG WIN ${fmt(lineWin)}`, 2500); }
-    else { sfx.win(x); showWin(`WIN ${fmt(lineWin)}`); }
-    state.balance += lineWin; save(); ui();
-    $('status').textContent = res.wins.map(w => `Line ${w.line + 1}: ${w.count}× ${M.SYMBOLS[w.sym].name}`).join(' · ') + ` - won ${fmt(lineWin)}`;
-  } else if (!res.bonus) $('status').textContent = 'No win - spin again!';
-  state.lastWin = lineWin;
-  if (res.bonus) { await sleep(lineWin > 0 ? 1400 : 500); await bonusTrigger(res.bonus); }
+  if (lineWin > 0 || res.bonus || jp) state.hits++;   // same definition as MATH.md hit frequency (any award: line win, bonus trigger or jackpot)
+  state.log.push({ spin: state.spins, stops: res.stops, lineWin, bonus: res.bonus, crowns: cr.newly, meter: cr.meter, jackpot: jp && jp.tier, quick: ctl.quick });
   state.spinning = false; ui();
+  if (lineWin > 0) {
+    drawLines(res.wins);
+    const tier = tierOf(res.lineWinX);
+    $('status').textContent = res.wins.map(w => `Line ${w.line + 1}: ${w.count}× ${M.SYMBOLS[w.sym].name}`).join(' · ');
+    if (tier) { state.spinning = true; ui(); await celebrate(tier, lineWin); state.spinning = false; }
+    else A.sfx.fanfare(0);
+    banner(`WIN ${fmt(lineWin)}`); setBalance(state.balance + lineWin);
+    addHistory(lineWin, res.wins.map(w => `${w.count}× ${M.SYMBOLS[w.sym].name}`).join(', '));
+    if (tier && state.auto?.stopBig) stopAuto('big win');
+  } else if (!res.bonus && !jp && !cr.newly.length) $('status').textContent = 'No win - spin again!';
+  if (res.bonus) { stopAuto('bonus'); state.spinning = true; ui(); await sleep(lineWin > 0 ? 900 : 300); await runBonus(res.bonus); state.spinning = false; }
+  if (jp) { stopAuto('jackpot'); state.spinning = true; ui(); await sleep(300); await runJackpot(jp, BETS[spinBet]); state.spinning = false; }
+  ui();
+  return res;
+}
+function addHistory(win, desc) { state.history.unshift({ spin: state.spins, win, desc, bet: bet() }); state.history.length = Math.min(state.history.length, 30); }
+
+// ---------- autoplay / turbo ----------
+async function autoLoop() {
+  while (state.auto && state.auto.left > 0) {
+    if (state.auto.floor && state.balance - bet() < state.auto.floor) { stopAuto('balance limit'); break; }
+    state.auto.left--; ui(); await doSpin(); if (!state.auto) break;
+    await sleep(state.turbo ? 150 : 450);
+  }
+  if (state.auto) stopAuto('done');
+}
+function stopAuto(why) { if (!state.auto) return; state.auto = null; ui(); if (why && why !== 'user') $('status').textContent = `Autoplay stopped (${why}).`; }
+function autoMenu() {
+  openPanel(`<h2>Autoplay</h2><p class="note">Stops automatically on the Clash of Crowns bonus.</p>
+   <div class="opts">${[10, 25, 50, 100].map(n => `<button data-n="${n}">${n}</button>`).join('')}</div>
+   <div class="opts"><label><input type="checkbox" id="aBig" checked> Stop on a Big Win or more</label></div>
+   <div class="opts"><label>Stop if balance falls below <select id="aFloor"><option value="0">no limit</option><option>250</option><option selected>500</option><option>750</option><option>900</option></select></label></div>
+   <button class="big" data-close>CANCEL</button>`, p => p.querySelectorAll('[data-n]').forEach(b => b.onclick = () => {
+    state.auto = { left: +b.dataset.n, stopBig: p.querySelector('#aBig').checked, floor: +p.querySelector('#aFloor').value }; closePanel(); ui(); autoLoop(); }));
 }
 
-// ---- bonus: Clash of Crowns ----
-async function bonusTrigger(count) {
-  state.inBonus = true; ui();
+// ---------- panels ----------
+function openPanel(html, bind) {
+  const ov = $('overlay'); ov.innerHTML = `<div class="panel">${html}</div>`; ov.classList.remove('hidden'); A.sfx.click();
+  const p = ov.firstChild; p.querySelectorAll('[data-close]').forEach(b => b.onclick = closePanel); ov.onclick = e => { if (e.target === ov) closePanel(); };
+  bind && bind(p);
+}
+function closePanel() { const ov = $('overlay'), p = ov.firstChild; if (!p) return; p.classList.add('out'); setTimeout(() => { ov.classList.add('hidden'); ov.innerHTML = ''; }, RM ? 0 : 240); }
+function showPaytable() {
+  const rows = Object.entries(cfg.paytable).map(([k, p]) => `<div><img src="${SYM_SRC(k)}" alt=""><span><b>${M.SYMBOLS[k].name}</b><br>3: ${p[0]} · 4: ${p[1]} · 5: ${p[2]}</span></div>`).join('');
+  openPanel(`<h2>Paytable</h2><p class="note">Pays × line bet (line bet = bet ÷ 5), left to right on 5 lines: 3 rows + 2 V-shapes. The Dragon WILD substitutes for all symbols except the War Banner. CROWNS pay nothing on lines; a Crown lights its reel's crown meter (meters are kept per bet level). Light all five to play the PICK JACKPOT: pick shields until three match - Mini ${cfg.jackpot.tiers.mini.x}×, Minor ${cfg.jackpot.tiers.minor.x}×, Major ${cfg.jackpot.tiers.major.x}×, Grand ${cfg.jackpot.tiers.grand.x}× bet; the meters then reset. 3+ War Banners anywhere trigger Clash of Crowns, which pays bet × total multiplier (4 banners: +1 round; 5 banners: +2 rounds and a Shield). Quick-stop only shortens the animation - the result is decided when the spin starts.</p>
+  <div class="paytable">${rows}<div><img src="${SYM_SRC('B')}" alt=""><span><b>War Banner</b><br>scatter · bonus trigger</span></div><div><img src="${SYM_SRC('C')}" alt=""><span><b>Crown</b><br>collect · lights the reel's meter</span></div></div>
+  <p class="note">Free play demo - no real money. Theoretical RTP of this build: ${(cfg.targetRTP * 100).toFixed(0)}% (uncertified prototype).</p><button class="big" data-close>CLOSE</button>`);
+}
+function showHistory() {
+  const rows = state.history.length ? state.history.map(h => `<div><span>#${h.spin} · ${h.desc}</span><b>+${fmt(h.win)}</b></div>`).join('') : '<p>No wins yet - spin to make history!</p>';
+  openPanel(`<h2>Recent wins</h2><p class="note">Spins ${state.spins} · Hits ${state.hits}</p><div class="hist">${rows}</div><button class="big" data-close>CLOSE</button>`);
+}
+
+// ---------- bonus: Clash of Crowns cinematic chain ----------
+let bctl = { speed: 1, skip: false };
+const bsleep = ms => bctl.skip ? sleep(0) : sleep((RM ? ms * 0.4 : ms) / bctl.speed);
+const phase = p => { state.phases.push(p); };
+let bonusVideo = null;
+function preloadBonusVideo() {
+  if (!F.bonusVideo || RM || bonusVideo) return;
+  bonusVideo = document.createElement('video'); Object.assign(bonusVideo, { muted: true, playsInline: true, preload: 'auto' }); bonusVideo.setAttribute('playsinline', '');
+  bonusVideo.src = 'assets/bonus_transition_web.mp4'; bonusVideo.onerror = () => { bonusVideo.failed = true; }; bonusVideo.load();
+}
+function cineSkipUI(c) {
+  c.insertAdjacentHTML('beforeend', '<button class="skip" id="bSkip">Skip ▸▸</button><div class="speedhint">Tap to speed up</div>');
+  $('bSkip').onclick = e => { e.stopPropagation(); bctl.skip = true; };
+  c.onclick = () => { bctl.speed = 3; };
+}
+async function runBonus(count) {
+  state.inBonus = true; bctl = { speed: 1, skip: false }; state.phases = []; ui();
+  const tierCfg = cfg.bonus.tiers[count];
   $('status').textContent = `${count} WAR BANNERS! Clash of Crowns!`;
-  sfx.fanfare();
-  for (let i = 0; i < 5; i++) { const b = document.createElement('img'); b.src = SYM_SRC('B'); b.className = 'unfurl-banner'; b.style.left = (4 + i * 19) + '%'; b.style.animationDelay = i * 0.1 + 's'; document.body.appendChild(b); setTimeout(() => b.remove(), 2200); }
-  await sleep(2000);
-  const hero = await chooseHero(count);
-  const win = await duel(hero, count);
-  state.balance += win; save(); state.inBonus = false; ui();
-  $('status').textContent = `Clash of Crowns paid ${fmt(win)} demo credits.`;
-}
-function chooseHero(count) {
-  const ov = $('overlay'); ov.classList.remove('hidden');
-  const heroes = cfg.bonus.heroes, tier = cfg.bonus.tiers[count];
-  const extra = count === 5 ? '+2 rounds and a Shield' : count === 4 ? '+1 round' : '';
-  ov.innerHTML = `<div class="panel" style="background-image:linear-gradient(#0008,#000c),url(assets/hero_select_vibrant.jpg)" id="heroSelect">
-    <h2>Choose Your Champion</h2><p class="lbl">${count} banners · ${tier.rounds} rounds ${extra ? '· ' + extra : ''}</p>
-    <div class="heroes">${Object.entries(heroes).map(([k, h]) => `<button class="hero" data-hero="${k}" style="--c:${HERO_COLORS[k]}"><img src="assets/hero_${k}.jpg" alt="${h.name}"><small>${h.name.split(' ')[0]}<br>${h.vol} volatility</small></button>`).join('')}</div>
-    <p style="font:11px system-ui;opacity:.8">Every champion has the same expected return; choice only changes the swing. Outcomes are random.</p></div>`;
-  return new Promise(res => ov.querySelectorAll('.hero').forEach(b => b.onclick = () => { audio(); tone(440, 0.2, 'triangle', 0.2); res(b.dataset.hero); }));
-}
-async function duel(hero, count) {
-  const ov = $('overlay'), h = cfg.bonus.heroes[hero], outcome = M.playBonus(cfg, hero, count, rng);
-  ov.innerHTML = `<div class="panel duel" id="duel"><h2>Clash of Crowns</h2>
-    <div class="duel-top"><div><div class="lbl">MORALE</div><div class="bar morale"><i id="morale"></i></div><div class="lbl" style="margin-top:4px">${h.name.split(' ')[0].toUpperCase()} HEALTH</div><div class="bar health"><i id="heroHP" style="width:100%"></i></div></div>
-    <div class="multbanner" id="mult">x0</div>
-    <div><div class="lbl">HORDE HEALTH</div><div class="bar health"><i id="hordeHP" style="width:100%"></i></div>${outcome.shield ? '<div class="lbl" id="shieldTag" style="margin-top:4px">🛡 SHIELD READY</div>' : ''}</div></div>
-    <div class="arena"><div class="fighter" id="fHero" style="background-image:url(assets/hero_${hero}.jpg);background-size:cover;background-position:top;border:2px solid ${HERO_COLORS[hero]}"></div><div class="fighter horde" id="fHorde"></div></div>
-    <div class="rounds" id="rounds">${outcome.rounds} ROUNDS LEFT</div><div class="log" id="log">The Horde champion approaches...</div></div>`;
-  const set = (id, v) => { $(id).style.width = v + '%'; };
-  set('morale', 40); await sleep(1100);
+  // 1. banners flash on the reels + war horn
+  phase('bannerFlash'); A.sfx.horn(); A.theme('bonus');
+  document.querySelectorAll('#reels [data-s="B"]').forEach(c => c.classList.add('bflash'));
+  FX.flash('#ffb040', 500, 0.5); await sleep(RM ? 300 : 1000);
+  // 2. gates burst: video clip (baked title) or code camera push through the text-free art (code title)
+  phase('transition');
+  const c = $('cine'); c.innerHTML = ''; c.classList.remove('hidden'); cineSkipUI(c);
+  A.sfx.whoosh(1.2); A.sfx.gates();
+  let usedVideo = false;
+  if (bonusVideo && !bonusVideo.failed && bonusVideo.readyState >= 2 && !bctl.skip) {
+    try {
+      c.prepend(bonusVideo); bonusVideo.currentTime = BONUS_VIDEO_START; await bonusVideo.play(); usedVideo = true;
+      await new Promise(res => { const end = () => res(); bonusVideo.onended = end; const iv = setInterval(() => { if (bctl.skip || bctl.speed > 1 && bonusVideo.currentTime > 2) { clearInterval(iv); end(); } }, 100); setTimeout(() => { clearInterval(iv); end(); }, 5000); });
+      bonusVideo.pause();
+    } catch (e) { usedVideo = false; }
+  }
+  if (!usedVideo) {
+    c.insertAdjacentHTML('afterbegin', '<div class="push"></div><div class="ctitle">CLASH<br>OF CROWNS</div>');
+    await bsleep(2500);
+  }
+  state.bonusVideoUsed = usedVideo;
+  FX.flash('#fff', 400, 0.9);
+  // 3. champion select slides in
+  phase('select');
+  c.innerHTML = ''; c.onclick = null; bctl.skip = false; bctl.speed = 1;
+  const heroes = cfg.bonus.heroes, extra = count - 3;
+  c.insertAdjacentHTML('beforeend', `<div class="scene" id="heroSelect" style="background:linear-gradient(#0008,#000c)">
+    <h2>Choose Your Champion</h2>
+    <div>${extra ? `<span class="callout rounds">EXTRA ROUNDS +${extra === 2 ? 2 : 1}</span>` : ''}${tierCfg.shield ? '<span class="callout shield">🛡 SHIELD</span>' : ''}<span class="callout" style="background:#000a;border:2px solid #d4a23a">${tierCfg.rounds} ROUNDS</span></div>
+    <div class="hs">${Object.keys(heroes).map((k, i) => `<button data-hero="${k}" style="left:${[2, 22.5, 41, 59.8, 78.6][i]}%;--c:${HERO_COLORS[k]}" aria-label="${heroes[k].name}"></button>`).join('')}</div>
+    <div class="hcap">${Object.entries(heroes).map(([k, h]) => `<div style="--c:${HERO_COLORS[k]}">${h.name.split(' ').slice(1).join(' ')}<small>${h.vol} volatility</small></div>`).join('')}</div>
+    <p class="note">Every champion has the same expected return - the choice only changes the swing. Outcomes are random.</p></div>`);
+  window.__game.bonusOpen = { count, rounds: tierCfg.rounds, shield: tierCfg.shield };
+  const hero = await new Promise(res => c.querySelectorAll('[data-hero]').forEach(b => b.onclick = e => { e.stopPropagation(); b.classList.add('picked'); A.sfx.gem(); res(b.dataset.hero); }));
+  FX.flash(HERO_COLORS[hero], 450, 0.8); await sleep(RM ? 100 : 550);
+  cineSkipUI(c);
+  const outcome = M.playBonus(cfg, hero, count, rng);   // outcome fixed now; the duel below only presents it
+  const h = heroes[hero];
+  // 4. versus splash
+  phase('versus');
+  c.querySelector('.scene')?.remove();
+  c.insertAdjacentHTML('afterbegin', `<div class="vs" id="versus"><div class="side hero" style="--c:${HERO_COLORS[hero]}"><img src="assets/hero_${hero}.webp" alt=""><div class="name">${h.name}</div></div>
+    <div class="vsword">VS</div><div class="side horde"><img src="assets/horde_champion.webp" alt=""><div class="name">${CHAMPION}</div></div></div>`);
+  A.sfx.whoosh(0.5); setTimeout(() => { A.sfx.slam(); FX.shake(c, 12); }, RM ? 0 : 450);
+  await bsleep(1900);
+  // 5. duel
+  phase('duel');
+  c.querySelector('#versus')?.remove();
+  c.insertAdjacentHTML('afterbegin', `<div class="duel" id="duel">
+    <div class="hud"><div class="grp"><div class="lbl">${h.name.split(' ')[0].toUpperCase()} HEALTH</div><div class="bar hp"><i id="heroHP"></i></div><div class="lbl">MORALE</div><div class="bar morale"><i id="morale" style="width:40%"></i></div></div>
+      <div class="multbanner" id="mult">x0</div>
+      <div class="grp right"><div class="lbl">HORDE HEALTH</div><div class="bar horde"><i id="hordeHP"></i></div>${outcome.shield ? '<div class="shieldtag" id="shieldTag">🛡 SHIELD READY</div>' : ''}</div></div>
+    <div class="arena"><div class="fighter" id="fHero" style="--c:${HERO_COLORS[hero]}" data-hero="${hero}"><img class="port" src="assets/hero_${hero}.webp" alt="${h.name}"></div>
+      <div class="fighter" id="fHorde"><img class="champ" src="assets/horde_champion.webp" alt="${CHAMPION}"></div></div>
+    <div class="dfoot"><div class="rounds" id="rounds">ROUND 1 OF ${outcome.rounds}</div><div class="log" id="log">The Horde champion approaches...</div></div></div>`);
+  const set = (id, v) => { const e = $(id); if (e) e.style.width = v + '%'; };
+  const vfx = (el, name, big) => { const i = document.createElement('img'); i.src = `assets/vfx/${name}.jpg`; i.className = 'vfx' + (big ? ' big' : ''); i.alt = ''; el.appendChild(i); setTimeout(() => i.remove(), 1100); };
+  await bsleep(900);
+  const critAt = Math.max(3, outcome.total * 0.3);
+  // three acts (presentation only - the outcome above is already fixed): I duel, II Dragon Phase transform, III coalition assists
+  const dragonAt = Math.max(2, Math.ceil(outcome.rounds / 2));
+  const allies = Object.keys(heroes).filter(k => k !== hero);   // never the player's own champion
+  let assistN = 0;
   for (const s of outcome.seq) {
-    const left = outcome.rounds - s.round;
-    const fHero = $('fHero'), fHorde = $('fHorde'); fHero.classList.remove('lunge', 'hit'); fHorde.classList.remove('lunge', 'hit'); void fHero.offsetWidth;
+    if (s.round === dragonAt && !state.dragon) {
+      state.dragon = true; phase('dragonPhase');
+      const fD0 = $('fHorde'); $('log').textContent = 'Vorrhak takes his DRAGON FORM!';
+      A.sfx.roar(); A.duck(0.3, 1.5); vfx(fD0, 'dragonfire', true); FX.shake(c, 16); FX.flash('#ff5a1a', 500, 0.8);
+      fD0.insertAdjacentHTML('beforeend', `<img class="champ dragon" src="assets/vorrhak_dragon.webp" alt="Vorrhak, dragon form">`);
+      fD0.classList.add('transform'); await bsleep(1300);
+    }
+    if (state.dragon && (s.result === 'win' || s.result === 'kill')) {
+      const ally = allies[(assistN++ + Math.floor(Math.random() * allies.length)) % allies.length];   // cosmetic pick
+      const a = document.createElement('img'); a.className = 'ally'; a.src = `assets/coalition/${ally}_charge.webp`; a.alt = heroes[ally].name; a.style.setProperty('--c', HERO_COLORS[ally]);
+      $('duel').querySelector('.arena').appendChild(a); A.sfx.whoosh(0.5); setTimeout(() => a.remove(), RM ? 600 : 1300);
+      $('log').textContent = `${heroes[ally].name} joins the charge!`; await bsleep(450);
+    }
+    const fH = $('fHero'), fD = $('fHorde'); [fH, fD].forEach(f => f.classList.remove('lungeR', 'lungeL', 'hit')); void fH.offsetWidth;
+    $('rounds').textContent = `ROUND ${s.round} OF ${outcome.rounds}`;
     if (s.result === 'win' || s.result === 'kill') {
-      fHero.classList.add('lunge'); setTimeout(() => { fHorde.classList.add('hit'); spark(fHorde, s.result === 'kill' ? '💥' : '⚔️'); }, 160);
-      if (s.result === 'kill') { $('log').textContent = 'Final round...'; sfx.drumroll(1.0); await sleep(1050); sfx.kill(); coinBurst(200); spark(fHorde, '🔥'); }
-      else sfx.clash();
-      $('log').textContent = s.result === 'kill' ? `KILLING BLOW! +x${s.add.toFixed(1)}` : `Round ${s.round}: hit lands! +x${s.add.toFixed(1)}`;
-    } else if (s.result === 'blocked') { fHorde.classList.add('lunge'); spark(fHero, '🛡'); sfx.clash(); $('log').textContent = `Round ${s.round}: the Shield blocks the Horde!`; const st = $('shieldTag'); if (st) st.textContent = '🛡 SHIELD USED'; }
-    else { fHorde.classList.add('lunge'); setTimeout(() => fHero.classList.add('hit'), 160); sfx.miss(); $('log').textContent = `Round ${s.round}: the Horde strikes back!`; }
+      if (s.result === 'kill') { $('log').textContent = 'The final blow...'; A.sfx.drumroll(0.9); A.duck(0.3, 2); await bsleep(950); }
+      fH.classList.add('lungeR'); const crit = s.result === 'kill' || s.add >= critAt;
+      await bsleep(150); fD.classList.add('hit'); vfx(fD, 'slash'); A.sfx.clash();
+      if (crit) { vfx(fD, s.result === 'kill' ? 'impact' : 'crit', true); A.sfx.crit(); FX.shake(c, s.result === 'kill' ? 18 : 11); FX.flash('#fff', 250, 0.6); }
+      $('log').textContent = s.result === 'kill' ? `KILLING BLOW! +x${s.add.toFixed(1)}` : `${crit ? 'CRITICAL HIT' : 'Hit'}! +x${s.add.toFixed(1)}`;
+      if (s.result === 'kill') { vfx(fD, 'victory', true); FX.coins(120, 'burst'); }
+    } else if (s.result === 'blocked') {
+      fD.classList.add('lungeL'); await bsleep(150); vfx(fH, 'block', true); A.sfx.block(); $('log').textContent = 'The Shield blocks the Horde!'; const st = $('shieldTag'); if (st) st.textContent = '🛡 SHIELD USED';
+    } else {
+      fD.classList.add('lungeL'); await bsleep(150); vfx(fH, 'dragonfire', true); A.sfx.roar(); await bsleep(150); fH.classList.add('hit'); vfx(fH, 'impact'); A.sfx.impact(); $('log').textContent = 'The Horde strikes back!';
+    }
     const m = $('mult'); m.textContent = 'x' + (+s.mult).toFixed(1).replace(/\.0$/, ''); m.classList.remove('pop'); void m.offsetWidth; m.classList.add('pop');
     set('morale', s.morale); set('heroHP', s.heroHP); set('hordeHP', s.hordeHP);
-    $('rounds').textContent = left > 0 ? `${left} ROUND${left > 1 ? 'S' : ''} LEFT` : 'VICTORY!';
-    await sleep(s.result === 'kill' ? 700 : 1150);
+    await bsleep(s.result === 'kill' ? 900 : 1100);
   }
-  const win = Math.round(bet() * outcome.total * 100) / 100;
-  $('log').innerHTML = `Victory! Bet ${bet()} × x${outcome.total} = <b>${fmt(win)}</b> demo credits`;
-  $('duel').insertAdjacentHTML('beforeend', '<button class="big" id="collect">COLLECT</button>');
-  await new Promise(res => { $('collect').onclick = res; });
-  ov.classList.add('hidden'); ov.innerHTML = '';
-  return win;
-}
-function spark(el, ch) { const s = document.createElement('div'); s.className = 'spark'; s.textContent = ch; el.appendChild(s); setTimeout(() => s.remove(), 650); }
-
-// ---- coin burst (canvas) ----
-const fx = $('fx'), ctx = fx.getContext('2d'); let parts = [], raf = 0;
-function coinBurst(n) {
-  fx.width = innerWidth * devicePixelRatio; fx.height = innerHeight * devicePixelRatio;
-  const cx = fx.width / 2, cy = fx.height * 0.4, s = devicePixelRatio;
-  for (let i = 0; i < n; i++) { const a = Math.random() * Math.PI * 2, v = (4 + Math.random() * 10) * s; parts.push({ x: cx, y: cy, vx: Math.cos(a) * v, vy: Math.sin(a) * v - 6 * s, r: (5 + Math.random() * 6) * s, life: 90 + Math.random() * 40, sp: Math.random() * 0.3 }); }
-  if (!raf) raf = requestAnimationFrame(tick);
-}
-function tick() {
-  ctx.clearRect(0, 0, fx.width, fx.height);
-  parts = parts.filter(p => p.life-- > 0);
-  for (const p of parts) { p.vy += 0.35 * devicePixelRatio; p.x += p.vx; p.y += p.vy; const w = Math.abs(Math.cos(p.life * p.sp)) * p.r;
-    ctx.fillStyle = '#ffcf3a'; ctx.strokeStyle = '#a8661a'; ctx.lineWidth = 2; ctx.beginPath(); ctx.ellipse(p.x, p.y, w + 1, p.r, 0, 0, Math.PI * 2); ctx.fill(); ctx.stroke(); }
-  raf = parts.length ? requestAnimationFrame(tick) : (ctx.clearRect(0, 0, fx.width, fx.height), 0);
+  // 6. victory total with count-up
+  state.dragon = false; phase('total');
+  const win = Math.round(bet() * outcome.total * 100) / 100, tier = tierOf(outcome.total);
+  c.insertAdjacentHTML('beforeend', `<div class="total" id="total"><div class="vic"></div>${tier ? `<img src="assets/${tier[1]}_win.webp" alt="" style="width:min(70vw,420px);animation:titlepop .7s cubic-bezier(.2,1.7,.4,1) both">` : '<h2 class="ctitle" style="font-size:clamp(34px,10vw,64px);animation:none">VICTORY!</h2>'}
+    <div class="amt" id="bonusAmt">0</div><div class="calc">Bet ${bet()} × total multiplier x${outcome.total} = ${fmt(win)} demo credits</div><button class="big" id="collect" style="margin-top:6px;font:bold 20px Georgia;padding:12px 28px;border-radius:30px;border:3px solid #fff0b0;background:linear-gradient(#f5c242,#a8661a);color:#3a1a00">COLLECT</button></div>`);
+  A.sfx.fanfare(tier ? tier[2] : 1); FX.coins(80 + (tier ? tier[2] * 50 : 0), 'shower'); FX.flash('#ffd77a', 400, 0.6);
+  const cu = { }; c.onclick = () => { cu.skip = true; };
+  await FX.countUp($('bonusAmt'), 0, win, bctl.skip ? 200 : 1800, fmt, () => A.sfx.tick(), cu);
+  window.__game.lastBonus = { hero, count, total: outcome.total, win, rounds: outcome.rounds, shield: outcome.shield, video: usedVideo };
+  await new Promise(res => { $('collect').onclick = e => { e.stopPropagation(); res(); }; });
+  // 7. gates close, back to the reels
+  phase('return');
+  c.onclick = null; c.insertAdjacentHTML('beforeend', '<div class="gate l"></div><div class="gate r"></div>'); A.sfx.gates(); A.theme('base');
+  await sleep(RM ? 50 : 800);
+  c.classList.add('hidden'); c.innerHTML = '';
+  setBalance(state.balance + win); addHistory(win, `Clash of Crowns x${outcome.total} (${h.name.split(' ')[0]})`);
+  banner(`BONUS WIN ${fmt(win)}`); state.inBonus = false; ui();
+  $('status').textContent = `Clash of Crowns paid ${fmt(win)} demo credits.`;
+  phase('done');
 }
 
-function showPaytable() {
-  const ov = $('overlay'); ov.classList.remove('hidden');
-  const rows = Object.entries(cfg.paytable).map(([k, p]) => `<div><img src="${SYM_SRC(k)}" alt=""><span>${M.SYMBOLS[k].name}<br>3:${p[0]} 4:${p[1]} 5:${p[2]}</span></div>`).join('');
-  ov.innerHTML = `<div class="panel" style="background:#1a0608"><h2>Paytable</h2><p style="font:12px system-ui">Pays are × line bet (line bet = bet ÷ 5), left to right on 5 lines: 3 rows + 2 V-shapes. Dragon WILD substitutes for all except the War Banner. 3+ War Banners anywhere trigger Clash of Crowns: pays bet × total multiplier (4 banners: +1 round, 5: +2 rounds and a Shield).</p>
-  <div class="paytable">${rows}<div><img src="${SYM_SRC('B')}" alt=""><span>War Banner<br>scatter / bonus</span></div></div>
-  <p style="font:11px system-ui">Free play demo - no real money. Theoretical RTP of this variant: ${(cfg.targetRTP * 100).toFixed(0)}% (uncertified prototype).</p><button class="big" id="closePay">CLOSE</button></div>`;
-  $('closePay').onclick = () => { ov.classList.add('hidden'); ov.innerHTML = ''; };
+// ---------- PICK JACKPOT: match three (award already drawn; the board is arranged around it) ----------
+async function runJackpot(jp, b) {
+  state.inBonus = true; ui(); state.phases = [];
+  const c = $('cine'); c.innerHTML = ''; c.classList.remove('hidden'); c.onclick = null;
+  phase('jpIntro'); A.sfx.horn(); A.theme('bonus'); FX.flash('#ffd77a', 500, 0.7);
+  const amt = t => fmt(cfg.jackpot.tiers[t].x * b);
+  c.insertAdjacentHTML('beforeend', `<div class="scene jp" id="jackpot">
+    <h2 class="jptitle">PICK JACKPOT</h2>
+    <div class="jplaques">${[...M.JP_TIERS].reverse().map(t => `<div class="plq" data-t="${t}" style="--c:${JP_COLORS[t]}"><img src="assets/jackpot/plaque_${t}.webp" alt="${t.toUpperCase()}"><b>${amt(t)}</b><span class="pips"><i></i><i></i><i></i></span></div>`).join('')}</div>
+    <p class="note">Match 3 to win that jackpot</p>
+    <div class="board">${Array.from({ length: 12 }, (_, i) => `<button class="tile" data-i="${i}" aria-label="Pick tile ${i + 1}"><span class="in"><img class="back" src="assets/jackpot/pick_shield.webp" alt=""><img class="front" alt=""></span></button>`).join('')}</div></div>`);
+  window.__game.jackpotOpen = { tier: jp.tier };
+  phase('pick');
+  const tiles = [...c.querySelectorAll('.tile')], counts = { mini: 0, minor: 0, major: 0, grand: 0 };
+  const flip = (tile, t, dim) => { const f = tile.querySelector('.front'); f.src = `assets/jackpot/tile_${t}.webp`; f.alt = t; tile.dataset.t = t; tile.style.setProperty('--c', JP_COLORS[t]); tile.classList.add('flipped'); if (dim) tile.classList.add('dim'); tile.disabled = true; };
+  let k = 0;
+  await new Promise(res => tiles.forEach(tile => tile.onclick = e => {
+    e.stopPropagation(); if (tile.disabled || k >= jp.reveal.length) return;
+    const t = jp.reveal[k++]; flip(tile, t); counts[t]++; A.sfx.clash();
+    const pl = c.querySelector(`.jplaques .plq[data-t="${t}"]`); pl.querySelectorAll('.pips i').forEach((p, j) => p.classList.toggle('on', j < counts[t]));
+    pl.classList.remove('bump'); void pl.offsetWidth; pl.classList.add('bump');
+    if (k === jp.reveal.length) res();
+  }));
+  // three matched: glow the plaque + matched tiles, then reveal the rest
+  phase('match');
+  const pl = c.querySelector(`.jplaques .plq[data-t="${jp.tier}"]`); pl.classList.add('won');
+  tiles.filter(t => t.dataset.t === jp.tier).forEach(t => t.classList.add('match'));
+  A.sfx.fanfare(JP_LEVEL[jp.tier]); FX.flash(JP_COLORS[jp.tier], 450, 0.7); FX.coins(40 + JP_LEVEL[jp.tier] * 60, 'burst');
+  await sleep(RM ? 200 : 900);
+  phase('reveal');
+  let ri = 0; for (const tile of tiles) if (!tile.disabled) { flip(tile, jp.rest[ri++], true); await sleep(RM ? 0 : 70); }
+  await sleep(RM ? 200 : 700);
+  const win = Math.round(jp.x * b * 100) / 100;
+  phase('award');
+  if (jp.tier === 'grand') { await celebrate(TIERS[0], win); }   // full platinum celebration
+  c.insertAdjacentHTML('beforeend', `<div class="total jptotal" id="jpTotal" style="--c:${JP_COLORS[jp.tier]}"><div class="plq jpwon"><img src="assets/jackpot/plaque_${jp.tier}.webp" alt="${jp.tier.toUpperCase()}"><b>${fmt(win)}</b></div><div class="amt" id="jpAmt">0</div>
+    <div class="calc">${jp.tier.toUpperCase()} JACKPOT · bet ${b} × ${jp.x} = ${fmt(win)} demo credits</div><button class="big" id="jpCollect">COLLECT</button></div>`);
+  A.sfx.fanfare(JP_LEVEL[jp.tier]); FX.coins(60 + JP_LEVEL[jp.tier] * 60, 'shower');
+  const cu = {}; c.onclick = () => { cu.skip = true; };
+  await FX.countUp($('jpAmt'), 0, win, RM ? 200 : 1000 + JP_LEVEL[jp.tier] * 500, fmt, () => A.sfx.tick(), cu);
+  window.__game.lastJackpot = { tier: jp.tier, x: jp.x, win, reveal: jp.reveal, rest: jp.rest };
+  await new Promise(res => { $('jpCollect').onclick = e => { e.stopPropagation(); res(); }; });
+  phase('return');
+  c.onclick = null; c.insertAdjacentHTML('beforeend', '<div class="gate l"></div><div class="gate r"></div>'); A.sfx.gates(); A.theme('base');
+  await sleep(RM ? 50 : 800); c.classList.add('hidden'); c.innerHTML = '';
+  setBalance(state.balance + win); addHistory(win, `${jp.tier.toUpperCase()} Jackpot`);
+  banner(`${jp.tier.toUpperCase()} JACKPOT ${fmt(win)}`); state.inBonus = false; ui();
+  $('status').textContent = `${jp.tier.toUpperCase()} Jackpot paid ${fmt(win)} demo credits. Crowns reset.`;
+  phase('done');
 }
 
-// ---- wiring ----
-buildReels(); setMute(muted); ui();
-$('spin').addEventListener('click', doSpin);
-$('reels').addEventListener('click', doSpin);
-$('betUp').onclick = () => { if (!state.spinning) { state.betIdx = Math.min(BETS.length - 1, state.betIdx + 1); save(); ui(); } };
-$('betDown').onclick = () => { if (!state.spinning) { state.betIdx = Math.max(0, state.betIdx - 1); save(); ui(); } };
-$('reset').onclick = () => { if (state.spinning || state.inBonus) return; state.balance = START; save(); ui(); $('status').textContent = 'Demo credits reset to 1,000.'; };
-$('mute').onclick = () => setMute(!muted);
+// ---------- loader & intro ----------
+const PRELOAD = [...Object.values(M.SYMBOLS).map(s => 'assets/symbols/' + s.file), 'assets/reel_frame.webp', 'assets/background.webp', 'assets/background_portrait.webp',
+  'assets/hero_select_bg_notitle.webp', 'assets/duel_arena_bg_balanced.webp', 'assets/bonus_transition_notext.webp', 'assets/horde_champion.webp', 'assets/vorrhak_dragon.webp', ...Object.keys(HERO_COLORS).map(k => `assets/coalition/${k}_charge.webp`),
+  ...Object.keys(HERO_COLORS).map(k => `assets/hero_${k}.webp`), ...['slash', 'block', 'impact', 'crit', 'dragonfire', 'victory'].map(v => `assets/vfx/${v}.jpg`),
+  'assets/big_win.webp', 'assets/mega_win.webp', 'assets/epic_win.webp', 'assets/ui/crown_meter_off.webp', 'assets/ui/crown_meter_on.webp', 'assets/jackpot/pick_shield.webp',
+  ...['mini', 'minor', 'major', 'grand'].flatMap(t => [`assets/jackpot/tile_${t}.webp`, `assets/jackpot/plaque_${t}.webp`])];
+function preload() {
+  let done = 0; const gems = [...document.querySelectorAll('.lgems i')];
+  return Promise.all(PRELOAD.map(src => new Promise(res => { const i = new Image(); i.decoding = 'async';
+    i.onload = () => { window.__game.loaded[src] = i.naturalWidth > 0; fin(); }; i.onerror = () => { window.__game.loaded[src] = false; fin(); }; i.src = src;
+    function fin() { done++; const p = done / PRELOAD.length; $('lbarFill').style.width = (p * 100) + '%'; $('lpct').textContent = `Loading ${Math.round(p * 100)}%`; gems.forEach((g, k) => g.classList.toggle('lit', p >= (k + 1) / 5)); res(); } })));
+}
+async function intro() {
+  const L = $('loader'), v = $('introVideo'); let videoOK = false;
+  const loading = preload();
+  const toCode = () => { L.classList.add('code'); $('skipIntro').classList.add('hidden'); };
+  if (F.introVideo && !RM) {
+    v.src = 'assets/load_intro_web.mp4';
+    try {
+      await Promise.race([v.play(), sleep(2500).then(() => { throw new Error('autoplay timeout'); })]); videoOK = true;
+      await new Promise(res => { $('skipIntro').onclick = L.onclick = () => res(); v.onended = res; v.ontimeupdate = () => { if (v.currentTime >= INTRO_VIDEO_CUT) res(); }; v.onerror = res; });
+    } catch (e) { videoOK = false; }
+    L.onclick = null; v.pause();
+  }
+  window.__game.introVideo = videoOK; toCode();
+  await loading; $('lpct').textContent = 'Ready'; $('enter').classList.remove('hidden');
+  await new Promise(res => { $('enter').onclick = res; L.onclick = e => { if (e.target.id !== 'skipIntro') res(); }; });
+  L.onclick = null;
+  // first tap: unlock audio, swell music, frame slams in, reels drop one by one
+  A.init(); A.sfx.swell(); setTimeout(() => A.theme('base'), 300);
+  L.classList.add('out'); $('app').classList.remove('pre'); $('app').classList.add('enter'); layout();
+  await sleep(RM ? 0 : 250); A.sfx.slam(); FX.flash('#ffd77a', 300, 0.4);
+  for (let r = 0; r < 5; r++) { reelEls[r].classList.add('drop'); await sleep(RM ? 0 : 110); setTimeout(() => A.sfx.thud(r), 300); }
+  setTimeout(() => { L.remove(); $('app').classList.remove('enter'); reelEls.forEach(r => r.classList.remove('drop')); }, 900);
+  pulseGems(); window.__game.introDone = true; preloadBonusVideo();
+}
+function pulseGems() { const g = $('gems'); g.classList.remove('pulse'); void g.offsetWidth; g.classList.add('pulse'); }
+
+// ---------- wiring ----------
+buildReels(); layout(); setBalance(state.balance, false); ui();
+if (!F.autoplay) $('autoBtn').classList.add('hidden');
+if (!F.turbo) $('turboBtn').classList.add('hidden');
+const setToggle = (id, on) => $(id).setAttribute('aria-pressed', on);
+setToggle('musicBtn', A.state().musicOn); setToggle('sfxBtn', A.state().sfxOn);
+function spinPress() {
+  if (state.inBonus) return;
+  if (state.auto) { stopAuto('user'); quickStop(); return; }
+  if (state.spinning) { quickStop(); return; }
+  doSpin();
+}
+$('spin').addEventListener('click', spinPress);
+$('reels').addEventListener('click', spinPress);
+const changeBet = d => { if (state.spinning || state.auto) return; const n = Math.max(0, Math.min(BETS.length - 1, state.betIdx + d)); if (n === state.betIdx) return; state.betIdx = n; save(); ui(); pulseGems(); A.sfx.gem(); };
+$('betUp').onclick = () => changeBet(1); $('betDown').onclick = () => changeBet(-1);
+$('reset').onclick = () => { if (state.spinning || state.inBonus) return; stopAuto(); setBalance(START, false); state.spins = state.hits = 0; state.history = []; ui(); $('status').textContent = 'Demo credits reset to 1,000.'; A.sfx.click(); };
+$('musicBtn').onclick = () => { A.init(); const on = !A.state().musicOn; A.setMusic(on); if (on) A.theme(state.inBonus ? 'bonus' : 'base'); setToggle('musicBtn', on); };
+$('sfxBtn').onclick = () => { A.init(); const on = !A.state().sfxOn; A.setSfx(on); setToggle('sfxBtn', on); };
+$('turboBtn').onclick = () => { state.turbo = !state.turbo; ui(); A.sfx.click(); };
+$('autoBtn').onclick = () => { if (state.auto) return stopAuto('user'); if (!state.spinning && !state.inBonus) autoMenu(); };
 $('payBtn').onclick = () => { if (!state.spinning && !state.inBonus) showPaytable(); };
-addEventListener('keydown', e => { if (e.code === 'Space' && $('overlay').classList.contains('hidden')) { e.preventDefault(); doSpin(); } });
+$('histBtn').onclick = () => { if (!state.inBonus) showHistory(); };
+addEventListener('keydown', e => { if (e.code === 'Space' && $('overlay').classList.contains('hidden') && window.__game.introDone) { e.preventDefault(); spinPress(); } });
+FX.startEmbers();
+window.__game.runJackpot = runJackpot; window.__game.doSpin = doSpin; window.__game.quickStop = quickStop;
+intro();
 })();

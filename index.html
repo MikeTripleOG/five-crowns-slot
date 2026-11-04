@@ -1,27 +1,71 @@
 <!doctype html>
 <html lang="en"><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Five Crowns - Free Play Demo</title>
+<meta name="theme-color" content="#120608">
+<title>Free Play Demo</title>
+<script src="title.js"></script>
 <link rel="icon" href="assets/symbols/crest_solenthia.png">
+<link rel="preload" href="assets/reel_frame.webp" as="image">
 <link rel="stylesheet" href="style.css">
 </head><body>
-<div id="app">
+<div id="bgL" class="bg"></div><div id="bgP" class="bg"></div>
+<canvas id="embers"></canvas>
+
+<div id="app" class="pre">
   <div class="demo-label" id="demoLabel">Free play demo - no real money</div>
-  <header><h1>FIVE CROWNS</h1><button id="mute" aria-label="Mute sound">🔊</button></header>
-  <div id="machine">
-    <div id="reels"></div>
-    <svg id="lines" viewBox="0 0 500 300" preserveAspectRatio="none"></svg>
-    <div id="winMsg"></div>
+  <header><h1 class="logo" data-title></h1></header>
+  <div id="stage">
+    <div id="machine">
+      <div id="reels"></div>
+      <svg id="lines" viewBox="0 0 500 300" preserveAspectRatio="none"></svg>
+      <img id="frame" src="assets/reel_frame.webp" alt="" draggable="false">
+      <div id="sheen"></div>
+      <div id="crowns" aria-label="Crown meters"><i></i><i></i><i></i><i></i><i></i></div>
+      <div id="gems"><i></i><i></i><i></i><i></i><i></i></div>
+    </div>
   </div>
+  <div id="ladder" aria-label="Jackpot ladder"></div>
+  <div id="winBanner" aria-live="polite"></div>
   <div id="controls">
     <div class="box"><span>BALANCE</span><b id="balance">1,000</b></div>
     <button id="spin" aria-label="Spin">SPIN</button>
     <div class="box bet"><span>BET</span><div><button id="betDown" aria-label="Lower bet">−</button><b id="bet">5</b><button id="betUp" aria-label="Raise bet">+</button></div></div>
   </div>
+  <div id="toolbar">
+    <button id="autoBtn" class="tb">AUTO</button>
+    <button id="turboBtn" class="tb" aria-pressed="false">⚡ TURBO</button>
+    <button id="musicBtn" class="tb" aria-pressed="true">♫ MUSIC</button>
+    <button id="sfxBtn" class="tb" aria-pressed="true">🔊 SFX</button>
+  </div>
   <div id="status">Tap SPIN or press Space. Good luck, champion!</div>
-  <div id="footer"><button id="reset">Reset demo credits</button><button id="payBtn">Paytable</button><span id="variant"></span></div>
+  <div id="footer">
+    <button id="reset" class="fbtn">↺ Reset credits</button>
+    <button id="payBtn" class="fbtn">📜 Paytable</button>
+    <button id="histBtn" class="fbtn">🏆 Win history</button>
+  </div>
+  <div id="meta"><span id="counter">Spins 0 · Hits 0</span> · <span id="variant"></span></div>
 </div>
+
 <div id="overlay" class="hidden"></div>
+<div id="cine" class="hidden"></div>
+<div id="celebrate" class="hidden"></div>
+<div id="flash"></div>
 <canvas id="fx"></canvas>
-<script src="math.js"></script><script src="configs.js"></script><script src="game.js"></script>
+
+<div id="loader">
+  <video id="introVideo" muted playsinline preload="auto"></video>
+  <div id="loadCode">
+    <h1 class="logo forge" data-title></h1>
+    <div class="lgems"><i style="--g:#3fd46a"></i><i style="--g:#4a8cff"></i><i style="--g:#ffc531"></i><i style="--g:#b45cff"></i><i style="--g:#ff3b30"></i></div>
+    <div class="lbar"><i id="lbarFill"></i></div>
+    <div id="lpct">Loading 0%</div>
+    <button id="enter" class="big hidden">TAP TO ENTER</button>
+    <div class="demo-label">Free play demo - no real money</div>
+  </div>
+  <button id="skipIntro" class="skip">Skip ▸▸</button>
+</div>
+
+<script src="features.js"></script>
+<script src="math.js"></script><script src="configs.js"></script>
+<script src="fx.js"></script><script src="audio.js"></script><script src="game.js"></script>
 </body></html>

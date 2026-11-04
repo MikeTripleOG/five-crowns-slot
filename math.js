@@ -13,7 +13,9 @@
     bo: { file: 'bow.png', name: 'Bow', kind: 'low' },
     sh: { file: 'shield.png', name: 'Shield', kind: 'low' },
     ho: { file: 'horn.png', name: 'Horn', kind: 'low' },
+    C: { file: 'crown.png', name: 'Crown (collect)', kind: 'collect' },
   };
+  const JP_TIERS = ['mini', 'minor', 'major', 'grand'];
   // rows 0..2 top..bottom; one entry per reel
   const PAYLINES = [[1,1,1,1,1],[0,0,0,0,0],[2,2,2,2,2],[0,1,2,1,0],[2,1,0,1,2]];
   const ROWS = 3, REELS = 5;
@@ -25,7 +27,7 @@
     let wildRun = 0; while (wildRun < 5 && syms[wildRun] === 'W') wildRun++;
     let best = { sym: null, count: 0, pay: 0 };
     if (wildRun >= 3 && paytable.W) { const p = paytable.W[wildRun - 3]; if (p > best.pay) best = { sym: 'W', count: wildRun, pay: p }; }
-    if (target && target !== 'B' && paytable[target]) {
+    if (target && target !== 'B' && target !== 'C' && paytable[target]) {
       let c = 0; while (c < 5 && (syms[c] === target || syms[c] === 'W')) c++;
       if (c >= 3) { const p = paytable[target][c - 3]; if (p > best.pay) best = { sym: target, count: c, pay: p }; }
     }
@@ -35,7 +37,9 @@
   function spin(cfg, rng) {
     const stops = [], grid = [];
     for (let r = 0; r < REELS; r++) {
-      const strip = cfg.strips[r], L = strip.length, st = Math.floor(rng() * L);
+      const strip = cfg.strips[r], L = strip.length; let st;
+      if (cfg.weights) { const w = cfg.weights[r]; let x = rng() * cfg.weightTotals[r]; st = 0; while (st < L - 1 && (x -= w[st]) >= 0) st++; }   // weighted (virtual) reel stops
+      else st = Math.floor(rng() * L);
       stops.push(st); grid.push([strip[st], strip[(st + 1) % L], strip[(st + 2) % L]]);
     }
     return evaluate(cfg, grid, stops);
@@ -49,8 +53,9 @@
     });
     let banners = 0; const bannerPos = [];
     for (let r = 0; r < REELS; r++) for (let y = 0; y < ROWS; y++) if (grid[r][y] === 'B') { banners++; bannerPos.push([r, y]); }
+    const crownReels = []; for (let r = 0; r < REELS; r++) if (grid[r].includes('C')) crownReels.push(r);
     // linePay in line-bet units; total bet = LINES line bets
-    return { stops, grid, wins, lineWinX: linePay / PAYLINES.length, banners, bannerPos, bonus: banners >= 3 ? Math.min(banners, 5) : 0 };
+    return { stops, grid, wins, lineWinX: linePay / PAYLINES.length, banners, bannerPos, bonus: banners >= 3 ? Math.min(banners, 5) : 0, crownReels };
   }
 
   function pickWeighted(table, rng) {
@@ -88,6 +93,25 @@
     return { total, rounds, shield: !!t.shield, seq };
   }
 
-  const api = { SYMBOLS, PAYLINES, ROWS, REELS, evalLine, spin, evaluate, playBonus, pickWeighted };
+  // Crown Collector: apply a spin's crowns to the persistent meter (array of 5 booleans). Returns {meter, newly, full}.
+  function applyCrowns(meter, crownReels) {
+    const m = meter.slice(), newly = [];
+    for (const r of crownReels) if (!m[r]) { m[r] = true; newly.push(r); }
+    return { meter: m, newly, full: m.every(Boolean) };
+  }
+  // PICK JACKPOT: the tier is drawn FIRST from the fixed weights; the 12-tile board (3 of each tier) and the
+  // reveal order are then arranged so the drawn tier is the first to reach three. Pays bet x tier multiple.
+  function playJackpot(cfg, rng, forced) {
+    const J = cfg.jackpot, tier = forced || pickWeighted(JP_TIERS.map(t => [t, J.tiers[t].w]), rng);
+    const others = JP_TIERS.filter(t => t !== tier), pre = [tier, tier];
+    for (const o of others) { const k = Math.floor(rng() * 3); for (let i = 0; i < k; i++) pre.push(o); }   // 0-2 of each loser before the win
+    for (let i = pre.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [pre[i], pre[j]] = [pre[j], pre[i]]; }
+    const reveal = [...pre, tier];
+    const rest = []; for (const t of JP_TIERS) { const left = 3 - reveal.filter(x => x === t).length; for (let i = 0; i < left; i++) rest.push(t); }
+    for (let i = rest.length - 1; i > 0; i--) { const j = Math.floor(rng() * (i + 1)); [rest[i], rest[j]] = [rest[j], rest[i]]; }
+    return { tier, x: J.tiers[tier].x, reveal, rest };
+  }
+
+  const api = { JP_TIERS, applyCrowns, playJackpot, SYMBOLS, PAYLINES, ROWS, REELS, evalLine, spin, evaluate, playBonus, pickWeighted };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.SlotMath = api;
 })(typeof window !== 'undefined' ? window : globalThis);
