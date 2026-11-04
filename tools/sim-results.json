@@ -1,0 +1,179 @@
+{
+ "92": {
+  "target": 0.92,
+  "spins": 30000000,
+  "rtp": 0.9193851166753952,
+  "ci95": 0.001449228658513975,
+  "baseRTP": 0.6504467266587834,
+  "bonusRTP": 0.2689383899997145,
+  "hitFreq": 0.19071906666666666,
+  "bonusRate": 0.023135633333333332,
+  "oneInBonus": 43.22336828182789,
+  "sdPerSpin": 4.049873608423752,
+  "maxWinX": 754.1,
+  "exact": {
+   "baseRTP": 0.6508153975293299,
+   "lineHitRate": 0.16900623885918004,
+   "p3": 0.021415234012462987,
+   "p4": 0.0016655986211163655,
+   "p5": 0.000049719361824369114,
+   "combos": 39099456
+  },
+  "perHero": {
+   "eldenvale": {
+    "simBonusMeanX": 11.628956133441857,
+    "exactBonusMeanX": 11.63762120875468,
+    "bonusSD": 11.246081663201032,
+    "totalRTP_exact": 0.9200000000012432,
+    "totalRTP_sim": 0.9197995720261758
+   },
+   "northgard": {
+    "simBonusMeanX": 11.63407663318267,
+    "exactBonusMeanX": 11.637621208697428,
+    "bonusSD": 4.852265138953988,
+    "totalRTP_exact": 0.9199999999999189,
+    "totalRTP_sim": 0.9199180120116731
+   },
+   "solenthia": {
+    "simBonusMeanX": 11.62815916677618,
+    "exactBonusMeanX": 11.637621208633574,
+    "bonusSD": 10.675402422905396,
+    "totalRTP_exact": 0.9199999999984418,
+    "totalRTP_sim": 0.9197811377472768
+   },
+   "vellorien": {
+    "simBonusMeanX": 11.625088733488107,
+    "exactBonusMeanX": 11.637621208641539,
+    "bonusSD": 15.131783637610093,
+    "totalRTP_exact": 0.9199999999986261,
+    "totalRTP_sim": 0.9197101169304586
+   },
+   "drakonia": {
+    "simBonusMeanX": 11.646921566675571,
+    "exactBonusMeanX": 11.637621208750987,
+    "bonusSD": 26.014024249036225,
+    "totalRTP_exact": 0.9200000000011577,
+    "totalRTP_sim": 0.9202151224137082
+   }
+  },
+  "secs": 37.493
+ },
+ "94": {
+  "target": 0.94,
+  "spins": 30000000,
+  "rtp": 0.9387180333384816,
+  "ci95": 0.001498210605692376,
+  "baseRTP": 0.6494228533254314,
+  "bonusRTP": 0.2892951800006749,
+  "hitFreq": 0.19085946666666667,
+  "bonusRate": 0.0231775,
+  "oneInBonus": 43.1452917700356,
+  "sdPerSpin": 4.186753799138736,
+  "maxWinX": 433.2,
+  "exact": {
+   "baseRTP": 0.6508153975293299,
+   "lineHitRate": 0.16900623885918004,
+   "p3": 0.021415234012462987,
+   "p4": 0.0016655986211163655,
+   "p5": 0.000049719361824369114,
+   "combos": 39099456
+  },
+  "perHero": {
+   "eldenvale": {
+    "simBonusMeanX": 12.494018933221865,
+    "exactBonusMeanX": 12.502278481267089,
+    "bonusSD": 12.055645211858483,
+    "totalRTP_exact": 0.9400000000012954,
+    "totalRTP_sim": 0.9398089520957769
+   },
+   "northgard": {
+    "simBonusMeanX": 12.499350066807068,
+    "exactBonusMeanX": 12.502278481182284,
+    "bonusSD": 5.202028641157389,
+    "totalRTP_exact": 0.9399999999993338,
+    "totalRTP_sim": 0.9399322641583638
+   },
+   "solenthia": {
+    "simBonusMeanX": 12.493988966630374,
+    "exactBonusMeanX": 12.502278481224213,
+    "bonusSD": 11.447960042078746,
+    "totalRTP_exact": 0.9400000000003037,
+    "totalRTP_sim": 0.9398082589519742
+   },
+   "vellorien": {
+    "simBonusMeanX": 12.492450766545693,
+    "exactBonusMeanX": 12.502278481204064,
+    "bonusSD": 16.242761774898522,
+    "totalRTP_exact": 0.9399999999998376,
+    "totalRTP_sim": 0.9397726795349362
+   },
+   "drakonia": {
+    "simBonusMeanX": 12.53072816670954,
+    "exactBonusMeanX": 12.502278481210869,
+    "bonusSD": 28.06490787417092,
+    "totalRTP_exact": 0.9399999999999951,
+    "totalRTP_sim": 0.940658056929675
+   }
+  },
+  "secs": 38.282
+ },
+ "96": {
+  "target": 0.96,
+  "spins": 30000000,
+  "rtp": 0.9600609033434148,
+  "ci95": 0.0015653852704927852,
+  "baseRTP": 0.6512328733254815,
+  "bonusRTP": 0.3088280299999252,
+  "hitFreq": 0.19082846666666667,
+  "bonusRate": 0.0230939,
+  "oneInBonus": 43.30147787944003,
+  "sdPerSpin": 4.374473590996043,
+  "maxWinX": 866.1,
+  "exact": {
+   "baseRTP": 0.6508153975293299,
+   "lineHitRate": 0.16900623885918004,
+   "p3": 0.021415234012462987,
+   "p4": 0.0016655986211163655,
+   "p5": 0.000049719361824369114,
+   "combos": 39099456
+  },
+  "perHero": {
+   "eldenvale": {
+    "simBonusMeanX": 13.367854499994296,
+    "exactBonusMeanX": 13.366935753674893,
+    "bonusSD": 12.925448697981976,
+    "totalRTP_exact": 0.959999999998928,
+    "totalRTP_sim": 0.9600212511084396
+   },
+   "northgard": {
+    "simBonusMeanX": 13.36598453331001,
+    "exactBonusMeanX": 13.36693575373835,
+    "bonusSD": 5.580694333413504,
+    "totalRTP_exact": 0.9600000000003959,
+    "totalRTP_sim": 0.959977997746819
+   },
+   "solenthia": {
+    "simBonusMeanX": 13.367163599985822,
+    "exactBonusMeanX": 13.366935753747233,
+    "bonusSD": 12.27996685783343,
+    "totalRTP_exact": 0.9600000000006013,
+    "totalRTP_sim": 0.96000527020987
+   },
+   "vellorien": {
+    "simBonusMeanX": 13.368127799869605,
+    "exactBonusMeanX": 13.366935753758813,
+    "bonusSD": 17.39022221544523,
+    "totalRTP_exact": 0.9600000000008692,
+    "totalRTP_sim": 0.9600275726854157
+   },
+   "drakonia": {
+    "simBonusMeanX": 13.37915183347882,
+    "exactBonusMeanX": 13.366935753732646,
+    "bonusSD": 29.887892700061737,
+    "totalRTP_exact": 0.960000000000264,
+    "totalRTP_sim": 0.9602825646680129
+   }
+  },
+  "secs": 32.592
+ }
+}

@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>Five Crowns - Free Play Demo</title>
+<link rel="icon" href="assets/symbols/crest_solenthia.png">
+<link rel="stylesheet" href="style.css">
+</head><body>
+<div id="app">
+  <div class="demo-label" id="demoLabel">Free play demo - no real money</div>
+  <header><h1>FIVE CROWNS</h1><button id="mute" aria-label="Mute sound">🔊</button></header>
+  <div id="machine">
+    <div id="reels"></div>
+    <svg id="lines" viewBox="0 0 500 300" preserveAspectRatio="none"></svg>
+    <div id="winMsg"></div>
+  </div>
+  <div id="controls">
+    <div class="box"><span>BALANCE</span><b id="balance">1,000</b></div>
+    <button id="spin" aria-label="Spin">SPIN</button>
+    <div class="box bet"><span>BET</span><div><button id="betDown" aria-label="Lower bet">−</button><b id="bet">5</b><button id="betUp" aria-label="Raise bet">+</button></div></div>
+  </div>
+  <div id="status">Tap SPIN or press Space. Good luck, champion!</div>
+  <div id="footer"><button id="reset">Reset demo credits</button><button id="payBtn">Paytable</button><span id="variant"></span></div>
+</div>
+<div id="overlay" class="hidden"></div>
+<canvas id="fx"></canvas>
+<script src="math.js"></script><script src="configs.js"></script><script src="game.js"></script>
+</body></html>
