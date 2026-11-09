@@ -25,9 +25,10 @@
     document.addEventListener('visibilitychange', () => { if (!document.hidden && !eRAF) eRAF = requestAnimationFrame(loop); });
   }
   // ---- coins (foreground canvas) ----
+  const VW = () => document.documentElement.clientWidth, VH = () => document.documentElement.clientHeight;
   const fc = document.getElementById('fx'), fx = fc.getContext('2d'); let parts = [], raf = 0;
   function coins(n = 80, mode = 'burst') {
-    fc.width = innerWidth * DPR; fc.height = innerHeight * DPR; if (RM) n = Math.min(n, 25);
+    fc.width = VW() * DPR; fc.height = VH() * DPR; if (RM) n = Math.min(n, 25);
     for (let i = 0; i < n; i++) {
       let p;
       if (mode === 'shower') p = { x: Math.random() * fc.width, y: -Math.random() * fc.height * 0.6, vx: (Math.random() - 0.5) * 2 * DPR, vy: (2 + Math.random() * 4) * DPR };

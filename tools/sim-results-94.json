@@ -1,0 +1,82 @@
+{
+ "94": {
+  "target": 0.94,
+  "spins": 50000000,
+  "rtp": 0.9417520912881984,
+  "ci95": 0.0027168810782874963,
+  "baseRTP": 0.6668581800180342,
+  "bonusRTP": 0.2438977111998948,
+  "duelRTP": 0.02355026200002602,
+  "freeSpinsRTP": 0.2129638291998199,
+  "lastStandRTP": 0.00738362,
+  "duelWinRate": 0.7539625535204383,
+  "avgFreeSpins": 7.500212459735454,
+  "seed": 0,
+  "jackpotRTP": 0.0309962,
+  "jackpots": 52846,
+  "avgSpinsToFill": 946.1098096355448,
+  "tierCounts": {
+   "mini": 36891,
+   "minor": 11744,
+   "major": 3693,
+   "grand": 518
+  },
+  "tierFreqOneIn": {
+   "mini": 1355.3441218725434,
+   "minor": 4257.493188010899,
+   "major": 13539.128080151639,
+   "grand": 96525.09652509652
+  },
+  "hitFreq": 0.18488282,
+  "bonusRate": 0.01935242,
+  "oneInBonus": 51.67312408473979,
+  "sdPerSpin": 9.801658337420958,
+  "maxWinX": 13512.82,
+  "exact": {
+   "baseRTP": 0.6662423214003699,
+   "lineHitRate": 0.16567919860199923,
+   "p3": 0.017982386263849882,
+   "p4": 0.0013224218241847411,
+   "p5": 0.00003796462689601879,
+   "combos": 45396120
+  },
+  "perHero": {
+   "eldenvale": {
+    "simBonusMeanX": 12.545915630010304,
+    "exactBonusMeanX": 12.540190806436925,
+    "bonusSD": 57.13352160515934,
+    "totalRTP_exact": 0.9400000000051549,
+    "totalRTP_sim": 0.9401107339663679
+   },
+   "northgard": {
+    "simBonusMeanX": 12.560798359988418,
+    "exactBonusMeanX": 12.540190806101714,
+    "bonusSD": 44.54878217749967,
+    "totalRTP_exact": 0.939999999998671,
+    "totalRTP_sim": 0.9403986072297122
+   },
+   "solenthia": {
+    "simBonusMeanX": 12.541136320009239,
+    "exactBonusMeanX": 12.540190806130711,
+    "bonusSD": 54.26314646569979,
+    "totalRTP_exact": 0.9399999999992319,
+    "totalRTP_sim": 0.9400182888592831
+   },
+   "vellorien": {
+    "simBonusMeanX": 12.54015964000585,
+    "exactBonusMeanX": 12.540190806555625,
+    "bonusSD": 64.29910619954636,
+    "totalRTP_exact": 0.940000000007451,
+    "totalRTP_sim": 0.9399993971599623
+   },
+   "drakonia": {
+    "simBonusMeanX": 12.580929910026908,
+    "exactBonusMeanX": 12.540190805199911,
+    "bonusSD": 87.53486032353746,
+    "totalRTP_exact": 0.9399999999812276,
+    "totalRTP_sim": 0.940788007226506
+   }
+  },
+  "secs": 376.247
+ }
+}

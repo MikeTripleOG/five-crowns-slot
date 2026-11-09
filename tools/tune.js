@@ -77,26 +77,39 @@ function buildTables(M3) {
     for (const t of [3,4,5]) {
       const target = M3 * TIER_FACTOR[t];
       // values to 0.1, weights integer (x10). Fix exact mean by adjusting the weights of the two nearest-to-target entries.
-      let tab = sh.map(e => [Math.max(1, Math.round(e[0] / mean * target * 10)) / 10, Math.round(e[1] * 1000)]);
-      // exact correction: shift weight between an entry below and above target so sum(v*w)=target*sum(w)
-      let sw = tab.reduce((a,e)=>a+e[1],0), sv = tab.reduce((a,e)=>a+e[0]*e[1],0);
-      let err = sv - target * sw; // want 0
-      const lo = tab.findIndex(e => e[0] < target), hi = tab.findIndex(e => e[0] > target);
-      // move dw weight from hi to lo (or reverse): changes err by dw*(v_lo - v_hi)
-      const dw = err / (tab[hi][0] - tab[lo][0]);
-      tab[lo][1] += dw; tab[hi][1] -= dw;
+      let tab = sh.map(e => [Math.max(10, Math.round(e[0] / mean * target * 10)) / 10, /* multiplier floor x1.0 */ Math.round(e[1] * 1000)]);
+      // exact correction without negative weights: blend the table with a point mass at its min (x1) or max value
+      { const W0 = tab.reduce((a,e)=>a+e[1],0), mean0 = tab.reduce((a,e)=>a+e[0]*e[1],0) / W0;
+        const iMin = tab.reduce((k,e,i)=>e[0]<tab[k][0]?i:k,0), iMax = tab.reduce((k,e,i)=>e[0]>tab[k][0]?i:k,0);
+        const iPt = mean0 > target ? iMin : iMax, v = tab[iPt][0], al = (v - target) / (v - mean0);
+        tab = tab.map((e,i) => [e[0], e[1]*al + (i===iPt ? (1-al)*W0 : 0)]); }
       tables[h][t] = tab.map(e => [e[0], +e[1].toFixed(6)]);
     }
   }
   return tables;
 }
+// Duel: P(win) per tier (same for every hero), Last Stand consolation table (x bet) on a loss.
+const WIN_PROB = { 3: 0.75, 4: 0.8, 5: 0.9 };
+const LAST_STAND = [[1, 40], [1.5, 30], [2, 20], [3, 10]];
+const LS_MEAN = LAST_STAND.reduce((a, e) => a + e[0] * e[1], 0) / LAST_STAND.reduce((a, e) => a + e[1], 0);
+// Spoils of War free spins: E[sum of line-win x over N sticky-crest free spins], N uniform 5..10 (multiplier applied on top).
+// Not closed-form (sticky state) - estimated once by seeded Monte Carlo, with its standard error reported.
+const FS_TRIALS = +process.env.FS_TRIALS || 4_000_000;
+const fsCfg = { strips, weights, weightTotals, paytable };
+let fsS = 0, fsS2 = 0; { const r = seeded(987654321); for (let i = 0; i < FS_TRIALS; i++) { const n = 5 + Math.floor(r() * 6); const v = M.playFreeSpins(fsCfg, n, 1, r).sumX; fsS += v; fsS2 += v * v; } }
+const FS_MEAN = fsS / FS_TRIALS, FS_SE = Math.sqrt((fsS2 / FS_TRIALS - FS_MEAN * FS_MEAN) / FS_TRIALS);
+console.log('free spins E[sumX]', FS_MEAN.toFixed(5), '+-', FS_SE.toFixed(5), 'last stand mean', LS_MEAN);
 const configs = {};
 for (const target of [0.96, 0.94, 0.92]) {
-  const per = ex.p3 * TIER_FACTOR[3] + ex.p4 * TIER_FACTOR[4] + ex.p5 * TIER_FACTOR[5];
-  const M3 = (target - ex.base - jpRTP) / per;   // the jackpot carries its exact share; the duel bonus fills the rest
+  // bonus EV per trigger tier t = w_t * M3*TF_t * (1 + FS_MEAN) + (1 - w_t) * LS_MEAN
+  const P = { 3: ex.p3, 4: ex.p4, 5: ex.p5 };
+  const lin = [3, 4, 5].reduce((a, t) => a + P[t] * WIN_PROB[t] * TIER_FACTOR[t] * (1 + FS_MEAN), 0);
+  const ls = [3, 4, 5].reduce((a, t) => a + P[t] * (1 - WIN_PROB[t]) * LS_MEAN, 0);
+  const M3 = (target - ex.base - jpRTP - ls) / lin;   // the jackpot carries its exact share; the duel bonus fills the rest
   configs[Math.round(target*100)] = { id: Math.round(target*100), targetRTP: target, strips, weights, weightTotals, paytable,
     jackpot: { tiers: JP, crownProb: q, meanX: jpMeanX, fillSpins, rtp: jpRTP },
-    bonus: { heroes: Object.fromEntries(Object.entries(HEROES).map(([k,v])=>[k,{name:v.name,vol:v.vol}])), tiers: TIERS, tierFactor: TIER_FACTOR, meanMult3: M3, tables: buildTables(M3) },
+    bonus: { heroes: Object.fromEntries(Object.entries(HEROES).map(([k,v])=>[k,{name:v.name,vol:v.vol}])), tiers: TIERS, tierFactor: TIER_FACTOR, meanMult3: M3, winProb: WIN_PROB, lastStand: LAST_STAND, lastStandMean: LS_MEAN, fsMeanSumX: FS_MEAN, fsMeanSE: FS_SE, fsTrials: FS_TRIALS,
+      rtpSplit: { duel: [3,4,5].reduce((a,t)=>a+P[t]*WIN_PROB[t]*M3*TIER_FACTOR[t],0), freeSpins: [3,4,5].reduce((a,t)=>a+P[t]*WIN_PROB[t]*M3*TIER_FACTOR[t]*FS_MEAN,0), lastStand: ls }, tables: buildTables(M3) },
     exact: { baseRTP: ex.base, lineHitRate: ex.lineHit, p3: ex.p3, p4: ex.p4, p5: ex.p5, combos: ex.n } };
   console.log(target, 'bonus mean x', M3.toFixed(3));
 }

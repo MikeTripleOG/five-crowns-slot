@@ -3,13 +3,20 @@
 const M = window.SlotMath, CONFIGS = window.SlotConfigs, F = window.FC_FEATURES, A = window.FCAudio, FX = window.FCFX;
 const qs = new URLSearchParams(location.search);
 const cfg = CONFIGS[qs.get('rtp')] || CONFIGS[96];
-const fb = qs.get('forceBonus'); let forceBonus = fb ? Math.min(5, Math.max(3, +fb === 1 ? 3 : +fb || 3)) : 0;
+const fb = (qs.get('forceBonus') || '').toLowerCase();
+let forceBonus = fb ? (fb === 'win' || fb === 'laststand' ? 3 : Math.min(5, Math.max(3, +fb === 1 ? 3 : +fb || 3))) : 0;
+// test hooks: ?forceBonus=win|laststand forces the duel result; ?freeSpins=5..10 forces the Spoils of War count
+let forceDuel = fb === 'win' ? { won: true } : fb === 'laststand' ? { won: false } : {};
+if (qs.get('freeSpins')) forceDuel.fs = +qs.get('freeSpins');
+const MOVES = { strike: { label: 'STRIKE', icon: '⚔' }, guard: { label: 'GUARD', icon: '🛡' }, fury: { label: 'FURY', icon: '🔥' } };
+const MOVE_AUTO_MS = 5000;
 const BETS = [1, 2, 5, 10, 20, 50], START = 1000;
 const TIERS = [[50, 'epic', 3], [25, 'mega', 2], [10, 'big', 1]];            // win x bet thresholds -> title art / fanfare tier
 const HERO_COLORS = { eldenvale: '#3fd46a', northgard: '#4a8cff', solenthia: '#ffc531', vellorien: '#b45cff', drakonia: '#ff3b30' };
 const LINE_COLORS = ['#ffd23a', '#3fd46a', '#4ab0ff', '#ff5ad1', '#ff7a1a'];
 const CHAMPION = 'Vorrhak, Warlord of the Crimson Horde';
-const INTRO_VIDEO_CUT = 3.4;   // s: crossfade out of load_intro before its baked mock-UI (with a $ balance) appears
+const INTRO_VIDEO_CUT = 2.6;
+const DEMO = qs.get('demo') === '1';   // ?demo=1: trailer capture - intro skipped, autoplay never stops on big wins   // s: crossfade out of load_intro before its baked mock-UI (with a $ balance) appears
 const BONUS_VIDEO_START = 0.5; // s: skip the clip's baked mock reel frames
 const RM = FX.RM;
 const JP_COLORS = { mini: '#3fd46a', minor: '#4a8cff', major: '#b45cff', grand: '#ff3b30' };
@@ -42,9 +49,9 @@ let shownBal = state.balance, balCtl = {};
 function ui() {
   $('bet').textContent = bet();
   const sp = $('spin');
-  sp.disabled = state.inBonus || (state.spinning && !F.quickStop && !state.auto);
-  sp.textContent = state.auto ? `STOP ${state.auto.left}` : state.spinning && F.quickStop ? 'STOP' : 'SPIN';
-  sp.classList.toggle('stop', !!state.auto || (state.spinning && F.quickStop)); sp.classList.toggle('auto', !!state.auto);
+  sp.disabled = state.inBonus || ((busy || state.spinning) && !F.quickStop && !state.auto);
+  sp.textContent = state.auto ? `STOP ${state.auto.left}` : (busy || state.spinning) && F.quickStop ? 'STOP' : 'SPIN';
+  sp.classList.toggle('stop', !!state.auto || ((busy || state.spinning) && F.quickStop)); sp.classList.toggle('auto', !!state.auto);
   sp.setAttribute('aria-label', sp.textContent);
   $('counter').textContent = `Spins ${state.spins} · Hits ${state.hits}${state.spins ? ` (${(100 * state.hits / state.spins).toFixed(1)}%)` : ''}`;
   $('variant').textContent = `Math ${cfg.id}% RTP · uncertified`;
@@ -109,13 +116,16 @@ function spinReel(r, finalSyms, dur, antic, ctl) {
       { duration: dur, easing: antic ? 'cubic-bezier(.3,.55,.25,1)' : 'cubic-bezier(.2,.75,.25,1)', fill: 'forwards' });
     ctl.anims.push(anim);
     ctl.timers.push(setTimeout(() => reel.classList.remove('spinning'), dur * 0.8));
-    anim.onfinish = () => {
+    let settled = false;
+    const finish = () => { if (settled) return; settled = true; clearTimeout(guard);
       strip.innerHTML = finalSyms.map(cellHTML).join(''); anim.cancel(); reel.classList.remove('antic', 'spinning');
       if (!ctl.quick || !ctl.thudded) { A.sfx.thud(r); if (ctl.quick) ctl.thudded = true; }
       strip.querySelectorAll('.cell').forEach(c => c.classList.add('land'));
       if (finalSyms.includes('B')) { strip.querySelectorAll('[data-s="B"]').forEach(c => c.classList.add('banner')); A.sfx.bannerFlash(); }
       res();
     };
+    anim.onfinish = finish; anim.oncancel = finish;
+    const guard = setTimeout(finish, dur + 1500);   // watchdog: a reel can never leave the spin unresolved (not in ctl.timers, so quick-stop can't clear it)
   });
 }
 function quickStop() {
@@ -162,7 +172,7 @@ async function celebrate(tier, amount) {
   c.innerHTML = `<img src="assets/${name}_win.webp" alt="${name.toUpperCase()} WIN"><div class="amt">0</div><div class="note">Tap to skip</div>`;
   c.classList.remove('hidden'); c.onclick = () => { ctl.skip = true; };
   A.sfx.drumroll(0.5); A.duck(0.25, 2.5); FX.flash(level >= 3 ? '#ffb040' : '#fff', 450);
-  await sleep(450); A.sfx.fanfare(level); FX.coins(60 + level * 60, 'shower'); FX.coins(40 + level * 20, 'burst'); if (level >= 2) FX.shake(document.body, 8 + level * 3);
+  await sleep(450); A.sfx.fanfare(level); FX.coins(60 + level * 60, 'shower'); FX.coins(40 + level * 20, 'burst'); if (level >= 2) FX.shake($('app'), 8 + level * 3);
   await FX.countUp(c.querySelector('.amt'), 0, amount, 1200 + level * 900, fmt, () => A.sfx.tick(), ctl);
   FX.flash('#fff', 300, 0.5);
   await Promise.race([sleep(ctl.skip ? 300 : 1500), new Promise(r => c.onclick = r)]);
@@ -170,11 +180,19 @@ async function celebrate(tier, amount) {
 }
 
 // ---------- spin ----------
+// single entry point: one busy flag covering the WHOLE spin (reels + win + bonus + jackpot). Always released in finally.
+let busy = false;
 async function doSpin() {
-  if (state.spinning || state.inBonus) return;
+  if (busy || state.spinning || state.inBonus) return;
+  busy = true; state.spinning = true; ui();
+  try { return await spinOnce(); }
+  catch (e) { console.error('spin failed', e); $('status').textContent = 'Spin interrupted - ready again.'; stopAuto(); }
+  finally { busy = false; state.spinning = false; state.inBonus = false; spinCtl = null; ui(); }
+}
+async function spinOnce() {
   if (state.balance < bet()) { $('status').textContent = 'Not enough demo credits - lower the bet or tap Reset.'; stopAuto('balance'); return; }
   A.init();
-  state.spinning = true; setBalance(state.balance - bet(), false); state.spins++; clearWins(); ui();
+  setBalance(state.balance - bet(), false); state.spins++; clearWins(); ui();
   $('status').textContent = 'Spinning...'; A.sfx.whoosh(state.turbo ? 0.4 : 0.8);
   const res = forceBonus ? forcedResult(forceBonus) : forceJackpot ? forcedCrownResult() : M.spin(cfg, rng); forceBonus = 0;   // OUTCOME DECIDED HERE, before any animation
   // crowns + jackpot are part of the same decision: meter update and (if it fills) the jackpot award are fixed now
@@ -199,32 +217,33 @@ async function doSpin() {
   const lineWin = Math.round(res.lineWinX * bet() * 100) / 100;
   if (lineWin > 0 || res.bonus || jp) state.hits++;   // same definition as MATH.md hit frequency (any award: line win, bonus trigger or jackpot)
   state.log.push({ spin: state.spins, stops: res.stops, lineWin, bonus: res.bonus, crowns: cr.newly, meter: cr.meter, jackpot: jp && jp.tier, quick: ctl.quick });
-  state.spinning = false; ui();
+  ui();
   if (lineWin > 0) {
     drawLines(res.wins);
     const tier = tierOf(res.lineWinX);
     $('status').textContent = res.wins.map(w => `Line ${w.line + 1}: ${w.count}× ${M.SYMBOLS[w.sym].name}`).join(' · ');
-    if (tier) { state.spinning = true; ui(); await celebrate(tier, lineWin); state.spinning = false; }
+    if (tier) await celebrate(tier, lineWin);
     else A.sfx.fanfare(0);
     banner(`WIN ${fmt(lineWin)}`); setBalance(state.balance + lineWin);
     addHistory(lineWin, res.wins.map(w => `${w.count}× ${M.SYMBOLS[w.sym].name}`).join(', '));
-    if (tier && state.auto?.stopBig) stopAuto('big win');
+    if (tier && state.auto?.stopBig && !DEMO) stopAuto('big win');
   } else if (!res.bonus && !jp && !cr.newly.length) $('status').textContent = 'No win - spin again!';
-  if (res.bonus) { stopAuto('bonus'); state.spinning = true; ui(); await sleep(lineWin > 0 ? 900 : 300); await runBonus(res.bonus); state.spinning = false; }
-  if (jp) { stopAuto('jackpot'); state.spinning = true; ui(); await sleep(300); await runJackpot(jp, BETS[spinBet]); state.spinning = false; }
-  ui();
+  if (res.bonus) { stopAuto('bonus'); state.inBonus = true; ui(); await sleep(lineWin > 0 ? 900 : 300); await runBonus(res.bonus); }
+  if (jp) { stopAuto('jackpot'); state.inBonus = true; ui(); await sleep(300); await runJackpot(jp, BETS[spinBet]); }
   return res;
 }
 function addHistory(win, desc) { state.history.unshift({ spin: state.spins, win, desc, bet: bet() }); state.history.length = Math.min(state.history.length, 30); }
 
 // ---------- autoplay / turbo ----------
+let autoRunning = false;
 async function autoLoop() {
-  while (state.auto && state.auto.left > 0) {
+  if (autoRunning) return; autoRunning = true;
+  try { while (state.auto && state.auto.left > 0) {
     if (state.auto.floor && state.balance - bet() < state.auto.floor) { stopAuto('balance limit'); break; }
     state.auto.left--; ui(); await doSpin(); if (!state.auto) break;
     await sleep(state.turbo ? 150 : 450);
   }
-  if (state.auto) stopAuto('done');
+  if (state.auto) stopAuto('done'); } finally { autoRunning = false; ui(); }
 }
 function stopAuto(why) { if (!state.auto) return; state.auto = null; ui(); if (why && why !== 'user') $('status').textContent = `Autoplay stopped (${why}).`; }
 function autoMenu() {
@@ -245,7 +264,7 @@ function openPanel(html, bind) {
 function closePanel() { const ov = $('overlay'), p = ov.firstChild; if (!p) return; p.classList.add('out'); setTimeout(() => { ov.classList.add('hidden'); ov.innerHTML = ''; }, RM ? 0 : 240); }
 function showPaytable() {
   const rows = Object.entries(cfg.paytable).map(([k, p]) => `<div><img src="${SYM_SRC(k)}" alt=""><span><b>${M.SYMBOLS[k].name}</b><br>3: ${p[0]} · 4: ${p[1]} · 5: ${p[2]}</span></div>`).join('');
-  openPanel(`<h2>Paytable</h2><p class="note">Pays × line bet (line bet = bet ÷ 5), left to right on 5 lines: 3 rows + 2 V-shapes. The Dragon WILD substitutes for all symbols except the War Banner. CROWNS pay nothing on lines; a Crown lights its reel's crown meter (meters are kept per bet level). Light all five to play the PICK JACKPOT: pick shields until three match - Mini ${cfg.jackpot.tiers.mini.x}×, Minor ${cfg.jackpot.tiers.minor.x}×, Major ${cfg.jackpot.tiers.major.x}×, Grand ${cfg.jackpot.tiers.grand.x}× bet; the meters then reset. 3+ War Banners anywhere trigger Clash of Crowns, which pays bet × total multiplier (4 banners: +1 round; 5 banners: +2 rounds and a Shield). Quick-stop only shortens the animation - the result is decided when the spin starts.</p>
+  openPanel(`<h2>Paytable</h2><p class="note">Pays × line bet (line bet = bet ÷ 5), left to right on 5 lines: 3 rows + 2 V-shapes. The Dragon WILD substitutes for all symbols except the War Banner. CROWNS pay nothing on lines; a Crown lights its reel's crown meter (meters are kept per bet level). Light all five to play the PICK JACKPOT: pick shields until three match - Mini ${cfg.jackpot.tiers.mini.x}×, Minor ${cfg.jackpot.tiers.minor.x}×, Major ${cfg.jackpot.tiers.major.x}×, Grand ${cfg.jackpot.tiers.grand.x}× bet; the meters then reset. 3+ War Banners anywhere trigger Clash of Crowns (4 banners: +1 round; 5 banners: +2 rounds and a Shield). Each round you choose STRIKE, GUARD or FURY - the result is already decided, the move only changes the show. Win the duel: it pays bet × final multiplier, then SPOILS OF WAR awards 5-10 free spins where every win is × that multiplier and landed kingdom crests stay sticky. Lose: the LAST STAND consolation pays 1-3× bet, so the bonus never pays zero. Quick-stop only shortens the animation - the result is decided when the spin starts.</p>
   <div class="paytable">${rows}<div><img src="${SYM_SRC('B')}" alt=""><span><b>War Banner</b><br>scatter · bonus trigger</span></div><div><img src="${SYM_SRC('C')}" alt=""><span><b>Crown</b><br>collect · lights the reel's meter</span></div></div>
   <p class="note">Free play demo - no real money. Theoretical RTP of this build: ${(cfg.targetRTP * 100).toFixed(0)}% (uncertified prototype).</p><button class="big" data-close>CLOSE</button>`);
 }
@@ -301,15 +320,16 @@ async function runBonus(count) {
   const heroes = cfg.bonus.heroes, extra = count - 3;
   c.insertAdjacentHTML('beforeend', `<div class="scene" id="heroSelect" style="background:linear-gradient(#0008,#000c)">
     <h2>Choose Your Champion</h2>
-    <div>${extra ? `<span class="callout rounds">EXTRA ROUNDS +${extra === 2 ? 2 : 1}</span>` : ''}${tierCfg.shield ? '<span class="callout shield">🛡 SHIELD</span>' : ''}<span class="callout" style="background:#000a;border:2px solid #d4a23a">${tierCfg.rounds} ROUNDS</span></div>
+    <div class="callouts">${extra ? `<span class="callout rounds">EXTRA ROUNDS +${extra === 2 ? 2 : 1}</span>` : ''}${tierCfg.shield ? '<span class="callout shield">🛡 SHIELD</span>' : ''}<span class="callout" style="background:#000a;border:2px solid #d4a23a">${tierCfg.rounds} ROUNDS</span></div>
     <div class="hs">${Object.keys(heroes).map((k, i) => `<button data-hero="${k}" style="left:${[2, 22.5, 41, 59.8, 78.6][i]}%;--c:${HERO_COLORS[k]}" aria-label="${heroes[k].name}"></button>`).join('')}</div>
     <div class="hcap">${Object.entries(heroes).map(([k, h]) => `<div style="--c:${HERO_COLORS[k]}">${h.name.split(' ').slice(1).join(' ')}<small>${h.vol} volatility</small></div>`).join('')}</div>
     <p class="note">Every champion has the same expected return - the choice only changes the swing. Outcomes are random.</p></div>`);
   window.__game.bonusOpen = { count, rounds: tierCfg.rounds, shield: tierCfg.shield };
-  const hero = await new Promise(res => c.querySelectorAll('[data-hero]').forEach(b => b.onclick = e => { e.stopPropagation(); b.classList.add('picked'); A.sfx.gem(); res(b.dataset.hero); }));
+  const hero = await new Promise(res => { let done=false; const pick=b=>{ if(done)return; done=true; b.classList.add('picked'); A.sfx.gem(); res(b.dataset.hero); }; c.querySelectorAll('[data-hero]').forEach(b => { b.addEventListener('click', e => { e.stopPropagation(); pick(b); }, { once:true }); }); });
   FX.flash(HERO_COLORS[hero], 450, 0.8); await sleep(RM ? 100 : 550);
   cineSkipUI(c);
-  const outcome = M.playBonus(cfg, hero, count, rng);   // outcome fixed now; the duel below only presents it
+  const outcome = M.playBonus(cfg, hero, count, rng, forceDuel); forceDuel = {};   // EVERYTHING fixed now (duel, multiplier, free spins); moves only change the show
+  window.__game.bonusOutcome = outcome; state.moves = [];
   const h = heroes[hero];
   // 4. versus splash
   phase('versus');
@@ -325,8 +345,9 @@ async function runBonus(count) {
     <div class="hud"><div class="grp"><div class="lbl">${h.name.split(' ')[0].toUpperCase()} HEALTH</div><div class="bar hp"><i id="heroHP"></i></div><div class="lbl">MORALE</div><div class="bar morale"><i id="morale" style="width:40%"></i></div></div>
       <div class="multbanner" id="mult">x0</div>
       <div class="grp right"><div class="lbl">HORDE HEALTH</div><div class="bar horde"><i id="hordeHP"></i></div>${outcome.shield ? '<div class="shieldtag" id="shieldTag">🛡 SHIELD READY</div>' : ''}</div></div>
-    <div class="arena"><div class="fighter" id="fHero" style="--c:${HERO_COLORS[hero]}" data-hero="${hero}"><img class="port" src="assets/hero_${hero}.webp" alt="${h.name}"></div>
+    <div class="arena"><div class="fighter" id="fHero" style="--c:${HERO_COLORS[hero]}" data-hero="${hero}"><img class="port sprite" src="assets/coalition/${hero}_charge.webp" alt="${h.name}"></div>
       <div class="fighter" id="fHorde"><img class="champ" src="assets/horde_champion.webp" alt="${CHAMPION}"></div></div>
+    <div class="moves hidden" id="moves">${Object.entries(MOVES).map(([k, m]) => `<button data-move="${k}"><span>${m.icon}</span>${m.label}</button>`).join('')}<div class="mtimer"><i id="mtimer"></i></div></div>
     <div class="dfoot"><div class="rounds" id="rounds">ROUND 1 OF ${outcome.rounds}</div><div class="log" id="log">The Horde champion approaches...</div></div></div>`);
   const set = (id, v) => { const e = $(id); if (e) e.style.width = v + '%'; };
   const vfx = (el, name, big) => { const i = document.createElement('img'); i.src = `assets/vfx/${name}.jpg`; i.className = 'vfx' + (big ? ' big' : ''); i.alt = ''; el.appendChild(i); setTimeout(() => i.remove(), 1100); };
@@ -350,8 +371,14 @@ async function runBonus(count) {
       $('duel').querySelector('.arena').appendChild(a); A.sfx.whoosh(0.5); setTimeout(() => a.remove(), RM ? 600 : 1300);
       $('log').textContent = `${heroes[ally].name} joins the charge!`; await bsleep(450);
     }
-    const fH = $('fHero'), fD = $('fHorde'); [fH, fD].forEach(f => f.classList.remove('lungeR', 'lungeL', 'hit')); void fH.offsetWidth;
+    const fH = $('fHero'), fD = $('fHorde'); [fH, fD].forEach(f => f.classList.remove('lungeR', 'lungeL', 'hit', 'mv-strike', 'mv-guard', 'mv-fury')); void fH.offsetWidth;
     $('rounds').textContent = `ROUND ${s.round} OF ${outcome.rounds}`;
+    // player move: STRIKE / GUARD / FURY (5 s auto-pick). Presentation only: s (the round result) is already fixed.
+    const mv = await chooseMove(); state.moves.push(mv);
+    fH.classList.add('mv-' + mv); A.sfx[mv === 'guard' ? 'block' : mv === 'fury' ? 'roar' : 'whoosh'](0.5);
+    if (mv === 'fury') FX.flash('#ff3a00', 250, 0.35); if (mv === 'guard') vfx(fH, 'block');
+    $('log').textContent = mv === 'strike' ? 'You STRIKE!' : mv === 'guard' ? 'You raise your GUARD...' : 'You unleash your FURY!';
+    await bsleep(450); fH.classList.remove('mv-' + mv); void fH.offsetWidth;
     if (s.result === 'win' || s.result === 'kill') {
       if (s.result === 'kill') { $('log').textContent = 'The final blow...'; A.sfx.drumroll(0.9); A.duck(0.3, 2); await bsleep(950); }
       fH.classList.add('lungeR'); const crit = s.result === 'kill' || s.add >= critAt;
@@ -361,32 +388,105 @@ async function runBonus(count) {
       if (s.result === 'kill') { vfx(fD, 'victory', true); FX.coins(120, 'burst'); }
     } else if (s.result === 'blocked') {
       fD.classList.add('lungeL'); await bsleep(150); vfx(fH, 'block', true); A.sfx.block(); $('log').textContent = 'The Shield blocks the Horde!'; const st = $('shieldTag'); if (st) st.textContent = '🛡 SHIELD USED';
+    } else if (s.result === 'fall') {
+      $('log').textContent = 'Vorrhak unleashes the inferno...'; A.sfx.drumroll(0.9); await bsleep(800);
+      fD.classList.add('lungeL'); await bsleep(150); vfx(fH, 'dragonfire', true); vfx(fH, 'impact', true); A.sfx.roar(); A.sfx.impact(); FX.shake(c, 18); FX.flash('#ff3a00', 400, 0.7);
+      fH.classList.add('hit', 'fallen'); $('log').textContent = 'Your champion falls! The spoils are lost...';
     } else {
       fD.classList.add('lungeL'); await bsleep(150); vfx(fH, 'dragonfire', true); A.sfx.roar(); await bsleep(150); fH.classList.add('hit'); vfx(fH, 'impact'); A.sfx.impact(); $('log').textContent = 'The Horde strikes back!';
     }
     const m = $('mult'); m.textContent = 'x' + (+s.mult).toFixed(1).replace(/\.0$/, ''); m.classList.remove('pop'); void m.offsetWidth; m.classList.add('pop');
     set('morale', s.morale); set('heroHP', s.heroHP); set('hordeHP', s.hordeHP);
-    await bsleep(s.result === 'kill' ? 900 : 1100);
+    await bsleep(s.result === 'kill' || s.result === 'fall' ? 1100 : 1100);
   }
-  // 6. victory total with count-up
-  state.dragon = false; phase('total');
-  const win = Math.round(bet() * outcome.total * 100) / 100, tier = tierOf(outcome.total);
-  c.insertAdjacentHTML('beforeend', `<div class="total" id="total"><div class="vic"></div>${tier ? `<img src="assets/${tier[1]}_win.webp" alt="" style="width:min(70vw,420px);animation:titlepop .7s cubic-bezier(.2,1.7,.4,1) both">` : '<h2 class="ctitle" style="font-size:clamp(34px,10vw,64px);animation:none">VICTORY!</h2>'}
-    <div class="amt" id="bonusAmt">0</div><div class="calc">Bet ${bet()} × total multiplier x${outcome.total} = ${fmt(win)} demo credits</div><button class="big" id="collect" style="margin-top:6px;font:bold 20px Georgia;padding:12px 28px;border-radius:30px;border:3px solid #fff0b0;background:linear-gradient(#f5c242,#a8661a);color:#3a1a00">COLLECT</button></div>`);
-  A.sfx.fanfare(tier ? tier[2] : 1); FX.coins(80 + (tier ? tier[2] * 50 : 0), 'shower'); FX.flash('#ffd77a', 400, 0.6);
-  const cu = { }; c.onclick = () => { cu.skip = true; };
-  await FX.countUp($('bonusAmt'), 0, win, bctl.skip ? 200 : 1800, fmt, () => A.sfx.tick(), cu);
-  window.__game.lastBonus = { hero, count, total: outcome.total, win, rounds: outcome.rounds, shield: outcome.shield, video: usedVideo };
-  await new Promise(res => { $('collect').onclick = e => { e.stopPropagation(); res(); }; });
-  // 7. gates close, back to the reels
+  state.dragon = false;
+  const B = bet(); let duelWin = 0, fsWin = 0;
+  if (outcome.won) {
+    // 6a. victory: the duel pays bet x multiplier, and the multiplier carries into Spoils of War
+    phase('total');
+    duelWin = Math.round(B * outcome.total * 100) / 100;
+    c.insertAdjacentHTML('beforeend', `<div class="total" id="total"><div class="vic"></div><h2 class="ctitle" style="font-size:clamp(34px,10vw,64px);animation:none">VICTORY!</h2>
+      <div class="amt" id="bonusAmt">0</div><div class="calc">Bet ${B} × x${outcome.total} = ${fmt(duelWin)} demo credits</div>
+      <div class="spoils">SPOILS OF WAR<br><b>${outcome.fsN} FREE SPINS</b> at <b>x${outcome.total}</b><small>Kingdom crests stick</small></div>
+      <button class="big" id="collect">CLAIM THE SPOILS</button></div>`);
+    A.sfx.fanfare(1); FX.coins(80, 'shower'); FX.flash('#ffd77a', 400, 0.6);
+    const cu = {}; c.onclick = () => { cu.skip = true; };
+    await FX.countUp($('bonusAmt'), 0, duelWin, bctl.skip ? 200 : 1400, fmt, () => A.sfx.tick(), cu);
+    await new Promise(res => { $('collect').onclick = e => { e.stopPropagation(); res(); }; });
+    // 6b. free spins on the reels
+    phase('freeSpins');
+    c.onclick = null; c.insertAdjacentHTML('beforeend', '<div class="gate l"></div><div class="gate r"></div>'); A.sfx.gates();
+    await sleep(RM ? 50 : 700); c.classList.add('hidden'); c.innerHTML = '';
+    fsWin = await runFreeSpins(outcome.fs, B);
+  } else {
+    // 6c. Last Stand consolation - the bonus never pays zero
+    phase('lastStand');
+    duelWin = Math.round(B * outcome.lastStand * 100) / 100;
+    c.insertAdjacentHTML('beforeend', `<div class="total laststand" id="total"><div class="vic"></div><h2 class="ctitle" style="font-size:clamp(30px,9vw,58px);animation:none">LAST STAND</h2>
+      <p class="lsnote">Your champion fell, but the kingdom honours their courage.</p>
+      <div class="amt" id="bonusAmt">0</div><div class="calc">Consolation: bet ${B} × ${outcome.lastStand} = ${fmt(duelWin)} demo credits</div><button class="big" id="collect">COLLECT</button></div>`);
+    A.sfx.fanfare(0); FX.coins(30, 'burst');
+    const cu = {}; c.onclick = () => { cu.skip = true; };
+    await FX.countUp($('bonusAmt'), 0, duelWin, bctl.skip ? 200 : 1200, fmt, () => A.sfx.tick(), cu);
+    await new Promise(res => { $('collect').onclick = e => { e.stopPropagation(); res(); }; });
+  }
+  const win = Math.round((duelWin + fsWin) * 100) / 100;
+  window.__game.lastBonus = { hero, count, won: outcome.won, total: outcome.total, duelWin, fsWin, win, fsN: outcome.fsN, lastStand: outcome.lastStand, rounds: outcome.rounds, shield: outcome.shield, video: usedVideo, moves: state.moves.slice(),
+    fsGrids: outcome.fs ? outcome.fs.spins.map(x => x.grid.map(c => c.join('')).join('|')) : [] };
+  // 7. back to the reels
   phase('return');
-  c.onclick = null; c.insertAdjacentHTML('beforeend', '<div class="gate l"></div><div class="gate r"></div>'); A.sfx.gates(); A.theme('base');
-  await sleep(RM ? 50 : 800);
-  c.classList.add('hidden'); c.innerHTML = '';
-  setBalance(state.balance + win); addHistory(win, `Clash of Crowns x${outcome.total} (${h.name.split(' ')[0]})`);
+  if (!c.classList.contains('hidden')) { c.onclick = null; c.insertAdjacentHTML('beforeend', '<div class="gate l"></div><div class="gate r"></div>'); A.sfx.gates(); await sleep(RM ? 50 : 800); c.classList.add('hidden'); c.innerHTML = ''; }
+  A.theme('base');
+  setBalance(state.balance + win);
+  addHistory(win, outcome.won ? `Clash of Crowns x${outcome.total} + ${outcome.fsN} free spins (${h.name.split(' ')[0]})` : `Last Stand (${h.name.split(' ')[0]})`);
   banner(`BONUS WIN ${fmt(win)}`); state.inBonus = false; ui();
   $('status').textContent = `Clash of Crowns paid ${fmt(win)} demo credits.`;
   phase('done');
+}
+function chooseMove() {
+  const box = $('moves'); box.classList.remove('hidden'); A.sfx.click();
+  const bar = $('mtimer'); bar.style.transition = 'none'; bar.style.width = '100%'; void bar.offsetWidth;
+  const ms = bctl.skip ? 0 : MOVE_AUTO_MS; bar.style.transition = `width ${ms}ms linear`; bar.style.width = '0%';
+  return new Promise(res => {
+    const done = k => { clearTimeout(tm); box.classList.add('hidden'); box.querySelectorAll('button').forEach(b => b.onclick = null); res(k); };
+    const keys = Object.keys(MOVES), tm = setTimeout(() => done(keys[Math.floor(Math.random() * 3)]), ms);   // cosmetic auto-pick
+    box.querySelectorAll('[data-move]').forEach(b => b.onclick = e => { e.stopPropagation(); b.classList.add('picked'); setTimeout(() => b.classList.remove('picked'), 300); done(b.dataset.move); });
+  });
+}
+// Spoils of War: replays the pre-drawn free spins on the main reels (sticky crests, every win x multiplier), then the tally
+async function runFreeSpins(fs, B) {
+  const hud = $('fsHud'); hud.classList.remove('hidden'); document.body.classList.add('fsmode'); A.theme('bonus');
+  let total = 0; const set = (i) => { hud.innerHTML = `<div><small>FREE SPIN</small><b id="fsCount">${i} / ${fs.n}</b></div><div class="fsm"><small>MULTIPLIER</small><b>x${fs.mult}</b></div><div><small>SPOILS</small><b id="fsTotal">${fmt(total)}</b></div>`; };
+  set(0); clearWins(); await sleep(RM ? 100 : 500);
+  for (let i = 0; i < fs.spins.length; i++) {
+    const sp = fs.spins[i]; set(i + 1); clearWins(); A.sfx.whoosh(0.6);
+    const ctl = spinCtl = { anims: [], timers: [], quick: false }; const k = state.turbo ? 0.45 : 0.8;
+    const stuck = new Set(i ? fs.spins[i - 1].sticky : []);
+    await Promise.all([0, 1, 2, 3, 4].map(r => spinReel(r, sp.grid[r], RM ? 250 : 620 * k + r * 200 * k, false, ctl))); spinCtl = null; current = sp.grid;
+    sp.sticky.forEach(key => { const [r, y] = key.split(':').map(Number); const cell = stripEls[r].children[y]; cell && cell.classList.add('sticky'); if (!stuck.has(key) && cell) { cell.classList.add('stuck'); A.sfx.gem(); } });
+    if (sp.winX > 0) {
+      const w = Math.round(sp.winX * B * 100) / 100; total = Math.round((total + w) * 100) / 100;
+      drawLines(sp.wins); banner(`WIN ${fmt(sp.lineWinX * B)} × ${fs.mult} = ${fmt(w)}`); A.sfx.fanfare(0); set(i + 1);
+      $('fsTotal').classList.add('pop'); $('status').textContent = `Free spin ${i + 1}: ${fmt(w)} demo credits`;
+      await sleep(RM ? 300 : state.turbo ? 700 : 1300);
+    } else { $('status').textContent = `Free spin ${i + 1}: no win`; await sleep(RM ? 150 : state.turbo ? 250 : 550); }
+    window.__game.fsProgress = { i: i + 1, n: fs.n, total };
+  }
+  phase('tally');
+  // big tally with the platinum tiers (on the whole bonus win in x bet)
+  const grand = total + Math.round(B * fs.mult * 100) / 100, tier = tierOf(grand / B);
+  if (tier) await celebrate(tier, grand);
+  const c = $('cine'); c.innerHTML = ''; c.classList.remove('hidden');
+  c.insertAdjacentHTML('beforeend', `<div class="total tally" id="fsTally"><div class="vic"></div>${tier ? `<img src="assets/${tier[1]}_win.webp" alt="${tier[1].toUpperCase()} WIN" style="width:min(70vw,420px);animation:titlepop .7s cubic-bezier(.2,1.7,.4,1) both">` : '<h2 class="ctitle" style="font-size:clamp(30px,9vw,58px);animation:none">SPOILS OF WAR</h2>'}
+    <div class="amt" id="tallyAmt">0</div>
+    <div class="calc">Duel x${fs.mult}: ${fmt(B * fs.mult)} · ${fs.n} free spins at x${fs.mult}: ${fmt(total)}</div><button class="big" id="collect">COLLECT</button></div>`);
+  A.sfx.fanfare(tier ? tier[2] : 1); FX.coins(80 + (tier ? tier[2] * 60 : 0), 'shower');
+  const cu = {}; c.onclick = () => { cu.skip = true; };
+  await FX.countUp($('tallyAmt'), 0, grand, RM ? 200 : 1800, fmt, () => A.sfx.tick(), cu);
+  window.__game.fsTally = { total, grand, tier: tier ? tier[1] : null };
+  await new Promise(res => { $('collect').onclick = e => { e.stopPropagation(); res(); }; });
+  hud.classList.add('hidden'); document.body.classList.remove('fsmode'); document.querySelectorAll('.cell.sticky').forEach(x => x.classList.remove('sticky', 'stuck'));
+  return total;
 }
 
 // ---------- PICK JACKPOT: match three (award already drawn; the board is arranged around it) ----------
@@ -456,18 +556,21 @@ async function intro() {
   const L = $('loader'), v = $('introVideo'); let videoOK = false;
   const loading = preload();
   const toCode = () => { L.classList.add('code'); $('skipIntro').classList.add('hidden'); };
-  if (F.introVideo && !RM) {
+  let tapped = false, enterResolve = null;
+  L.addEventListener('click', () => { tapped = true; enterResolve && enterResolve(); });   // any tap skips remaining loader
+  $('skipIntro').onclick = e => { e.stopPropagation(); tapped = true; enterResolve && enterResolve(); };
+  if (F.introVideo && !RM && !DEMO) {
     v.src = 'assets/load_intro_web.mp4';
     try {
-      await Promise.race([v.play(), sleep(2500).then(() => { throw new Error('autoplay timeout'); })]); videoOK = true;
-      await new Promise(res => { $('skipIntro').onclick = L.onclick = () => res(); v.onended = res; v.ontimeupdate = () => { if (v.currentTime >= INTRO_VIDEO_CUT) res(); }; v.onerror = res; });
+      await Promise.race([v.play(), sleep(1800).then(() => { throw new Error('autoplay timeout'); })]); videoOK = true;
+      await new Promise(res => { enterResolve = res; v.onended = res; v.ontimeupdate = () => { if (v.currentTime >= INTRO_VIDEO_CUT) res(); }; v.onerror = res; });
     } catch (e) { videoOK = false; }
-    L.onclick = null; v.pause();
+    enterResolve = null; v.pause();
   }
   window.__game.introVideo = videoOK; toCode();
   await loading; $('lpct').textContent = 'Ready'; $('enter').classList.remove('hidden');
-  await new Promise(res => { $('enter').onclick = res; L.onclick = e => { if (e.target.id !== 'skipIntro') res(); }; });
-  L.onclick = null;
+  if (!tapped && !DEMO) await new Promise(res => { enterResolve = res; $('enter').onclick = e => { e.stopPropagation(); res(); }; });
+  enterResolve = null;
   // first tap: unlock audio, swell music, frame slams in, reels drop one by one
   A.init(); A.sfx.swell(); setTimeout(() => A.theme('base'), 300);
   L.classList.add('out'); $('app').classList.remove('pre'); $('app').classList.add('enter'); layout();
@@ -485,9 +588,9 @@ if (!F.turbo) $('turboBtn').classList.add('hidden');
 const setToggle = (id, on) => $(id).setAttribute('aria-pressed', on);
 setToggle('musicBtn', A.state().musicOn); setToggle('sfxBtn', A.state().sfxOn);
 function spinPress() {
-  if (state.inBonus) return;
+  if (!window.__game.introDone || state.inBonus) return;
   if (state.auto) { stopAuto('user'); quickStop(); return; }
-  if (state.spinning) { quickStop(); return; }
+  if (busy || state.spinning) { quickStop(); return; }
   doSpin();
 }
 $('spin').addEventListener('click', spinPress);
@@ -503,6 +606,6 @@ $('payBtn').onclick = () => { if (!state.spinning && !state.inBonus) showPaytabl
 $('histBtn').onclick = () => { if (!state.inBonus) showHistory(); };
 addEventListener('keydown', e => { if (e.code === 'Space' && $('overlay').classList.contains('hidden') && window.__game.introDone) { e.preventDefault(); spinPress(); } });
 FX.startEmbers();
-window.__game.runJackpot = runJackpot; window.__game.doSpin = doSpin; window.__game.quickStop = quickStop;
+window.__game.runJackpot = runJackpot; window.__game.doSpin = doSpin; window.__game.quickStop = quickStop; window.__game.busy = () => busy;
 intro();
 })();

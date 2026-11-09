@@ -1,5 +1,5 @@
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
-html,body{margin:0;min-height:100%;background:#120608;color:#ffe9b0;font-family:Georgia,"Times New Roman",serif;overflow-x:hidden;overscroll-behavior:none}
+html,body{overflow-x:clip;margin:0;min-height:100%;background:#120608;color:#ffe9b0;font-family:Georgia,"Times New Roman",serif;overflow-x:hidden;overscroll-behavior:none}
 button{font-family:inherit;cursor:pointer;touch-action:manipulation}
 .hidden{display:none!important}
 /* ---------- backgrounds (orientation crossfade, JS aligns the dark band to the reels) ---------- */
@@ -273,3 +273,80 @@ header{display:flex;justify-content:center}
 .jptotal .plq.jpwon b{font-size:clamp(18px,6vw,34px)}
 #crowns i:not(.on){filter:drop-shadow(0 2px 3px #000a) brightness(1.5)}
 .duel ~ .skip,#cine .skip{top:auto!important;bottom:calc(14px + env(safe-area-inset-bottom))!important}
+
+/* win banner now rides the frame's bottom rail (closes the phone gap between ladder and controls) */
+#machine #winBanner{position:absolute;left:50%;bottom:1%;translate:-50% 0;z-index:6;min-height:0;font-size:clamp(16px,4.6vw,28px)}
+#ladder{margin-top:6px}
+/* duel: keep 'Tap to speed up' clear of the round caption */
+.duel .dfoot{margin-bottom:34px}
+/* player moves */
+.moves{display:flex;justify-content:center;gap:8px;margin:4px 0 6px;flex-wrap:wrap;position:relative;z-index:5}
+.moves.hidden{display:none}
+.moves button{min-width:96px;padding:10px 12px;border-radius:14px;border:2px solid #ffe08a;font:bold 17px Georgia,serif;color:#fff6d8;letter-spacing:1px;cursor:pointer;text-shadow:0 1px 2px #000;box-shadow:0 4px 0 #0008,0 0 14px #0008}
+.moves button span{display:block;font-size:22px;line-height:1.1}
+.moves [data-move=strike]{background:linear-gradient(#c23a1a,#6a1206)}
+.moves [data-move=guard]{background:linear-gradient(#2a6ad4,#0e2a66)}
+.moves [data-move=fury]{background:linear-gradient(#f08a12,#8a2a00)}
+.moves button.picked{transform:scale(1.12);filter:brightness(1.4)}
+.mtimer{flex-basis:100%;height:4px;background:#0008;border-radius:2px;overflow:hidden;max-width:320px}
+.mtimer i{display:block;height:100%;width:100%;background:#ffd23a}
+.fighter.mv-strike{animation:mvstrike .45s ease-out}
+.fighter.mv-guard img.port{animation:mvguard .45s ease-out}
+.fighter.mv-fury{animation:mvfury .45s ease-out}
+@keyframes mvstrike{40%{transform:translateX(18%) rotate(4deg)}}
+@keyframes mvguard{50%{box-shadow:0 0 0 6px #9cd0ff,0 0 60px 20px #4a8cff;transform:scale(.96)}}
+@keyframes mvfury{30%{transform:scale(1.08);filter:drop-shadow(0 0 30px #ff3a00) brightness(1.5) saturate(1.6)}60%{transform:scale(1.04) rotate(-3deg)}}
+.fighter.fallen{filter:grayscale(.8) brightness(.6);transform:rotate(-8deg) translateY(6%);transition:all .6s}
+/* spoils + last stand + tally */
+.spoils{margin:6px 0;padding:8px 18px;border:2px solid #ffd23a;border-radius:14px;background:#000a;text-align:center;font:bold 15px Georgia,serif;color:#ffe9a8}
+.spoils b{font-size:22px;color:#fff}
+.spoils small{display:block;font:12px system-ui;color:#fffc}
+.lsnote{margin:0;color:#ffd9c0;text-align:center;font:15px Georgia,serif}
+#collect{margin-top:6px;font:bold 20px Georgia;padding:12px 28px;border-radius:30px;border:3px solid #fff0b0;background:linear-gradient(#f5c242,#a8661a);color:#3a1a00}
+/* free spins HUD on the reels */
+#fsHud{display:flex;justify-content:center;gap:6px;width:min(96vw,640px);margin:4px auto 0}
+#fsHud.hidden{display:none}
+#fsHud>div{flex:1;text-align:center;background:linear-gradient(#3a1606,#140602);border:2px solid #d4a23a;border-radius:12px;padding:4px 6px}
+#fsHud .fsm{border-color:#ff7a1a;box-shadow:0 0 14px #ff7a1a88}
+#fsHud small{display:block;font:bold 10px system-ui;color:#ffd77a;letter-spacing:1px}
+#fsHud b{font:bold clamp(16px,5vw,24px) Georgia,serif;color:#fff}
+#fsHud b.pop{animation:plqbump .35s}
+body.fsmode #ladder{display:none}
+body.fsmode #machine{filter:drop-shadow(0 0 18px #ff7a1a88)}
+.cell.sticky{box-shadow:inset 0 0 0 3px #ffd23a,inset 0 0 22px #ffb400;border-radius:6px}
+.cell.stuck{animation:stuckin .6s cubic-bezier(.2,1.7,.4,1)}
+@keyframes stuckin{0%{transform:scale(1.35);filter:brightness(2.2)}100%{transform:scale(1)}}
+@media (prefers-reduced-motion:reduce){.cell.stuck,.fighter.mv-strike,.fighter.mv-fury,.fighter.mv-guard img.port{animation:none}}
+
+/* playtest fixes */
+#stage{overflow-x:clip;margin-top:10px}
+header{position:relative;z-index:6;padding-bottom:4px}
+#crowns i.on{filter:drop-shadow(0 0 5px #ffc84a)}
+.scene.jp{width:100%;max-width:none;box-sizing:border-box;left:0;right:0}
+.callouts{display:flex;flex-wrap:wrap;justify-content:center;gap:4px 6px;max-width:94vw;margin:0 auto}
+.callouts .callout{margin:0;font-size:clamp(12px,3.4vw,18px);padding:5px 10px;white-space:nowrap}
+.fighter img.port.sprite{aspect-ratio:auto;object-fit:contain;max-height:100%;border:0;border-radius:0;box-shadow:none;filter:drop-shadow(0 0 14px var(--c)) drop-shadow(0 0 30px var(--c))}
+.fighter#fHero img.port.sprite{border:0;box-shadow:none;filter:drop-shadow(0 0 12px var(--c)) drop-shadow(0 0 28px var(--c))}
+.ally{max-width:46%;height:auto;max-height:80%;object-fit:contain}
+
+/* --- playtest polish pass --- */
+#cine{overflow-x:hidden}
+.scene.jp{overflow-x:hidden;overflow-y:auto;justify-content:flex-start;padding-left:max(3%,env(safe-area-inset-left));padding-right:max(3%,env(safe-area-inset-right))}
+.scene.jp .board{margin-left:auto;margin-right:auto;max-width:min(92vw,560px);width:100%;box-sizing:border-box}
+.jptotal,.total.jptotal{left:0;right:0;width:100%;box-sizing:border-box;overflow-x:hidden}
+.arena{overflow:hidden}                         /* keep the ally charge inside the duel frame */
+.ally{left:2%;max-width:42%;max-height:78%}
+@keyframes allyin{0%{transform:translateX(-40%);opacity:0}20%{opacity:1}55%{transform:translateX(18%)}100%{transform:translateX(28%);opacity:0}}
+#crowns{top:1%;height:12%;z-index:3}           /* no longer clips the title */
+#stage{margin-top:4px;padding-top:2px}
+header{z-index:7;margin-bottom:2px}
+.forge{animation:forge .9s cubic-bezier(.2,1.2,.4,1) both,logosheen 3s .9s linear infinite!important}
+#ladder{margin:0 auto;gap:3px}
+#app{gap:4px}
+.duel .dfoot .rounds,.duel .dfoot .log{display:block;width:min(92vw,520px);text-align:center}
+.duel .dfoot .log{margin-top:2px}
+.hcap{gap:3px;margin-top:8px}
+.hcap div{padding:3px 1px;font-size:clamp(10px,2.8vw,14px);line-height:1.15;overflow:hidden;text-overflow:ellipsis}
+.hcap small{font-size:clamp(9px,2.4vw,12px);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fighter img.port.sprite{max-height:100%;width:auto;max-width:100%}
+.fighter#fHero{overflow:visible;align-items:flex-end}

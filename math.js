@@ -64,33 +64,51 @@
     return table[table.length - 1][0];
   }
 
-  // Bonus: outcome (total multiplier) drawn from hero/tier table, then dramatised into rounds.
-  function playBonus(cfg, heroId, tier, rng) {
-    const total = pickWeighted(cfg.bonus.tables[heroId][tier], rng);
-    const t = cfg.bonus.tiers[tier];
-    const rounds = t.rounds;
-    // choose which of the first (rounds-1) exchanges are won; final round is the killing blow
-    const won = [];
-    for (let i = 0; i < rounds - 1; i++) won.push(rng() < 0.6);
-    let wonCount = won.filter(Boolean).length;
-    // split total into wonCount+1 parts (killing blow gets the biggest share)
-    const parts = []; let rem = Math.round(total * 10);
-    const weights = []; for (let i = 0; i < wonCount; i++) weights.push(0.5 + rng());
-    weights.push(1.5 + rng() * 1.5);
-    const wsum = weights.reduce((a, b) => a + b, 0);
-    for (let i = 0; i < weights.length; i++) {
-      const v = i === weights.length - 1 ? rem : Math.max(1, Math.floor(Math.round(total * 10) * weights[i] / wsum));
-      parts.push(Math.min(v, rem)); rem -= Math.min(v, rem);
-    }
-    const seq = []; let pi = 0, mult = 0, heroHP = 100, hordeHP = 100, morale = 40, shield = t.shield ? 1 : 0;
+  // Clash of Crowns. EVERYTHING is drawn here, once, when the hero is chosen: duel won/lost, the final multiplier,
+  // the free-spin count and every free spin. The player's per-round move (STRIKE/GUARD/FURY) only changes the animation.
+  // force (tests only): { won: true|false, fs: 5..10 }
+  function playBonus(cfg, heroId, tier, rng, force) {
+    force = force || {};
+    const B = cfg.bonus, t = B.tiers[tier], rounds = t.rounds;
+    const won = force.won != null ? !!force.won : rng() < B.winProb[tier];
+    const fsN = force.fs != null ? Math.max(5, Math.min(10, force.fs | 0)) : 5 + Math.floor(rng() * 6);
+    const drawn = pickWeighted(B.tables[heroId][tier], rng);          // final multiplier (a loss shows it building, then losing it)
+    const lastStand = won ? 0 : pickWeighted(B.lastStand, rng);
+    const total = won ? drawn : 0;
+    const seq = duelSeq(drawn, rounds, !!t.shield, won, rng);
+    const fs = won ? playFreeSpins(cfg, fsN, total, rng) : null;
+    const pay = won ? total + fs.payX : lastStand;                    // x total bet
+    return { won, total, rounds, shield: !!t.shield, seq, fsN: won ? fsN : 0, fs, lastStand, pay };
+  }
+  function duelSeq(total, rounds, hasShield, won, rng) {
+    const winP = won ? 0.6 : 0.45, wonR = []; for (let i = 0; i < rounds - 1; i++) wonR.push(rng() < winP);
+    const wonCount = wonR.filter(Boolean).length, T = Math.round(total * 10);
+    const weights = []; for (let i = 0; i < wonCount; i++) weights.push(0.5 + rng()); weights.push(1.5 + rng() * 1.5);
+    const wsum = weights.reduce((a, b) => a + b, 0), parts = []; let rem = T;
+    for (let i = 0; i < weights.length; i++) { const v = i === weights.length - 1 ? rem : Math.max(1, Math.floor(T * weights[i] / wsum)); parts.push(Math.min(v, rem)); rem -= Math.min(v, rem); }
+    const seq = []; let pi = 0, mult = 0, heroHP = 100, hordeHP = 100, morale = 40, shield = hasShield ? 1 : 0;
     for (let i = 0; i < rounds - 1; i++) {
-      if (won[i]) { const add = parts[pi++] / 10; mult += add; hordeHP = Math.max(8, hordeHP - 10 - rng() * 12); morale = Math.min(100, morale + 15); seq.push({ round: i + 1, result: 'win', add, mult: +mult.toFixed(1), heroHP, hordeHP, morale }); }
+      if (wonR[i]) { const add = parts[pi++] / 10; mult += add; hordeHP = Math.max(8, hordeHP - 10 - rng() * 12); morale = Math.min(100, morale + 15); seq.push({ round: i + 1, result: 'win', add, mult: +mult.toFixed(1), heroHP, hordeHP, morale }); }
       else if (shield > 0) { shield--; seq.push({ round: i + 1, result: 'blocked', add: 0, mult: +mult.toFixed(1), heroHP, hordeHP, morale }); }
       else { heroHP = Math.max(10, heroHP - 12 - rng() * 10); morale = Math.max(5, morale - 12); seq.push({ round: i + 1, result: 'lose', add: 0, mult: +mult.toFixed(1), heroHP, hordeHP, morale }); }
     }
-    const add = parts[pi] / 10; mult += add;
-    seq.push({ round: rounds, result: 'kill', add, mult: +total.toFixed(1), heroHP, hordeHP: 0, morale: 100 });
-    return { total, rounds, shield: !!t.shield, seq };
+    if (won) seq.push({ round: rounds, result: 'kill', add: parts[pi] / 10, mult: +total.toFixed(1), heroHP, hordeHP: 0, morale: 100 });
+    else seq.push({ round: rounds, result: 'fall', add: 0, mult: 0, heroHP: 0, hordeHP, morale: 0 });
+    return seq;
+  }
+  // Spoils of War: n free spins on the same weighted reels; every line win x mult; kingdom crests (D,V,S,N,E) that land stay
+  // sticky for the remaining free spins. Banners and Crowns are inert in free spins (no retrigger, no meter).
+  function playFreeSpins(cfg, n, mult, rng) {
+    const sticky = {}; const spins = []; let sumX = 0;
+    for (let i = 0; i < n; i++) {
+      const base = spin(cfg, rng), grid = base.grid.map(c => c.slice());
+      for (const k in sticky) { const [r, y] = k.split(':'); grid[r][y] = sticky[k]; }
+      const ev = evaluate(cfg, grid, base.stops);
+      for (let r = 0; r < REELS; r++) for (let y = 0; y < ROWS; y++) if (SYMBOLS[grid[r][y]].kind === 'high') sticky[r + ':' + y] = grid[r][y];
+      sumX += ev.lineWinX;
+      spins.push({ stops: base.stops, grid, wins: ev.wins, lineWinX: ev.lineWinX, winX: ev.lineWinX * mult, sticky: Object.keys(sticky) });
+    }
+    return { n, mult, spins, sumX, payX: sumX * mult };
   }
 
   // Crown Collector: apply a spin's crowns to the persistent meter (array of 5 booleans). Returns {meter, newly, full}.
@@ -112,6 +130,6 @@
     return { tier, x: J.tiers[tier].x, reveal, rest };
   }
 
-  const api = { JP_TIERS, applyCrowns, playJackpot, SYMBOLS, PAYLINES, ROWS, REELS, evalLine, spin, evaluate, playBonus, pickWeighted };
+  const api = { JP_TIERS, applyCrowns, playJackpot, playFreeSpins, duelSeq, SYMBOLS, PAYLINES, ROWS, REELS, evalLine, spin, evaluate, playBonus, pickWeighted };
   if (typeof module !== 'undefined' && module.exports) module.exports = api; else root.SlotMath = api;
 })(typeof window !== 'undefined' ? window : globalThis);
