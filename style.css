@@ -442,12 +442,70 @@ body.fsmode #fsHud {
 .mtimer { height: 6px; max-width: 360px; margin: 4px auto 0; border: 1px solid #ffe08a55; }
 .mtimer i { background: linear-gradient(90deg, #ffd23a, #ff7a1a); }
 
+/* Each portrait, name and hit target share the same button. No painted hit-map. */
 #heroSelect.scene {
-  background: #000 url(assets/hero_select_bg_notitle.webp) center/cover !important;
+  background: radial-gradient(ellipse at center, #253251, #080b15 75%) !important;
   border-radius: 0;
   width: 100%;
   max-width: none;
   height: 100%;
   max-height: 100svh;
+  overflow-y: auto;
+  gap: 10px;
 }
-#heroSelect .hs { background: transparent; box-shadow: none; max-width: min(1100px, 96vw); margin: 0 auto; }
+#heroSelect .hs {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: clamp(6px, 1vw, 16px);
+  width: 100%;
+  max-width: min(1100px, 96vw);
+  max-height: none;
+  aspect-ratio: auto;
+  background: none;
+  box-shadow: none;
+  margin: 0 auto;
+}
+#heroSelect .hs button {
+  position: relative;
+  inset: auto;
+  width: 100%;
+  height: auto;
+  min-width: 0;
+  padding: 5px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  border: 2px solid var(--c);
+  border-radius: 12px;
+  background: #080b18e8;
+  color: white;
+  cursor: pointer;
+}
+#heroSelect .hs img {
+  width: 100%;
+  height: min(40svh, 340px);
+  object-fit: contain;
+  border-radius: 8px;
+  pointer-events: none;
+}
+#heroSelect .hero-name {
+  display: block;
+  font: bold clamp(11px, 1.4vw, 18px)/1.25 system-ui;
+  margin: 6px 0 3px;
+  width: 100%;
+  overflow-wrap: anywhere;
+}
+#heroSelect .hs small {
+  color: var(--c);
+  font: clamp(10px, 1.2vw, 14px)/1.25 system-ui;
+}
+@media (orientation: portrait) and (max-width: 600px) {
+  #heroSelect .hs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  #heroSelect .hs img { height: min(22svh, 180px); }
+}
+@media (max-height: 480px) and (orientation: landscape) {
+  #heroSelect.scene { gap: 4px; }
+  #heroSelect h2 { font-size: 24px; }
+  #heroSelect .hs img { height: min(35svh, 150px); }
+  #heroSelect .note { font-size: 11px; margin-top: 0; }
+}

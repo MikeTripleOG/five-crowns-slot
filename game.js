@@ -321,8 +321,7 @@ async function runBonus(count) {
   c.insertAdjacentHTML('beforeend', `<div class="scene" id="heroSelect" style="background:linear-gradient(#0008,#000c)">
     <h2>Choose Your Champion</h2>
     <div class="callouts">${extra ? `<span class="callout rounds">EXTRA ROUNDS +${extra === 2 ? 2 : 1}</span>` : ''}${tierCfg.shield ? '<span class="callout shield">🛡 SHIELD</span>' : ''}<span class="callout" style="background:#000a;border:2px solid #d4a23a">${tierCfg.rounds} ROUNDS</span></div>
-    <div class="hs">${Object.keys(heroes).map((k, i) => `<button data-hero="${k}" style="left:${[2, 22.5, 41, 59.8, 78.6][i]}%;--c:${HERO_COLORS[k]}" aria-label="${heroes[k].name}"></button>`).join('')}</div>
-    <div class="hcap">${Object.entries(heroes).map(([k, h]) => `<div style="--c:${HERO_COLORS[k]}">${h.name.split(' ').slice(1).join(' ')}<small>${h.vol} volatility</small></div>`).join('')}</div>
+    <div class="hs">${Object.entries(heroes).map(([k, h]) => `<button type="button" data-hero="${k}" style="--c:${HERO_COLORS[k]}" aria-label="${h.name}"><img src="assets/hero_${k}.webp" alt="" draggable="false"><span class="hero-name">${h.name}</span><small>${h.vol} volatility</small></button>`).join('')}</div>
     <p class="note">Every champion has the same expected return - the choice only changes the swing. Outcomes are random.</p></div>`);
   window.__game.bonusOpen = { count, rounds: tierCfg.rounds, shield: tierCfg.shield };
   const hero = await new Promise(res => { let done=false; const pick=b=>{ if(done)return; done=true; b.classList.add('picked'); A.sfx.gem(); res(b.dataset.hero); }; c.querySelectorAll('[data-hero]').forEach(b => { b.addEventListener('click', e => { e.stopPropagation(); pick(b); }, { once:true }); }); });

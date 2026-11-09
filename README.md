@@ -52,6 +52,7 @@ All music and SFX are **procedural WebAudio**: no third-party tracks or samples.
   - `assets/vorrhak_dragon.webp`, `assets/horde_champion.webp`, `assets/duel_arena_bg_balanced.webp`
   - win titles, backgrounds, `vfx/`
 - `test/smoke.mjs`: the Playwright mobile suite (iPhone 13 profile).
+- `test/champion-selection.mjs`: coordinate-click checks for all five champion portraits on desktop, portrait and landscape. Each visible portrait and label now belongs to its own button; no invisible hit map or stretched group image.
 
 ## Math
 See [MATH.md](MATH.md). Exact RTP is 96/94/92%. The jackpot carries ~3.12 points of each; free spins carry most of the bonus share. Every hero has the same expected return. The hero choice is cosmetic plus volatility flavour; all heroes have the same expected return. Jackpot picks are arranged around a tier already drawn by the RNG.
