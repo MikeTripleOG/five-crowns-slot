@@ -1,0 +1,153 @@
+<!doctype html><meta charset=utf-8><title>Trailer audio offline render</title>
+<script>
+// Offline render of the Five Crowns procedural audio engine for trailer assets.
+// Schedules into OfflineAudioContext at 48 kHz stereo and exposes PCM float buffers.
+window.renderTrailer = async function () {
+  const SR = 48000;
+  const mtof = m => 440 * Math.pow(2, (m - 69) / 12);
+  function makeCtx(secs) {
+    const ac = new OfflineAudioContext(2, Math.ceil(SR * secs), SR);
+    const master = ac.createDynamicsCompressor(); master.threshold.value = -10; master.ratio.value = 4; master.connect(ac.destination);
+    const duckGain = ac.createGain(); duckGain.connect(master);
+    const musicBus = ac.createGain(); musicBus.gain.value = 0.42; musicBus.connect(duckGain);
+    const sfxBus = ac.createGain(); sfxBus.gain.value = 0.9; sfxBus.connect(master);
+    const reverb = ac.createConvolver(); const len = SR * 2.4, ir = ac.createBuffer(2, len, SR);
+    for (let c = 0; c < 2; c++) { const d = ir.getChannelData(c); for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 3); }
+    reverb.buffer = ir; const revSend = ac.createGain(); revSend.gain.value = 0.35; revSend.connect(reverb); reverb.connect(master);
+    const noiseBuf = ac.createBuffer(1, SR * 2, SR); const nd = noiseBuf.getChannelData(0); for (let i = 0; i < nd.length; i++) nd[i] = Math.random() * 2 - 1;
+    return { ac, master, duckGain, musicBus, sfxBus, reverb, revSend, noiseBuf };
+  }
+  function env(g, t, a, peak, d, sus = 0.0001) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(peak, t + a); g.gain.exponentialRampToValueAtTime(Math.max(sus, 0.0001), t + a + d); }
+  function out(ctx, node, bus, rev = 0) { node.connect(bus); if (rev) { const s = ctx.ac.createGain(); s.gain.value = rev; node.connect(s); s.connect(ctx.revSend); } }
+  function osc(ctx, type, f, t, dur, bus, { vol = 0.2, a = 0.01, slide = 0, filt = 0, q = 1, rev = 0, detune = 0 } = {}) {
+    const ac = ctx.ac, o = ac.createOscillator(), g = ac.createGain(); o.type = type; o.frequency.setValueAtTime(f, t); o.detune.value = detune;
+    if (slide) o.frequency.exponentialRampToValueAtTime(Math.max(20, f * slide), t + dur);
+    let n = o; if (filt) { const fl = ac.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = filt; fl.Q.value = q; o.connect(fl); n = fl; }
+    n.connect(g); env(g, t, a, vol, dur); out(ctx, g, bus, rev); o.start(t); o.stop(t + a + dur + 0.05);
+  }
+  function noise(ctx, t, dur, bus, { vol = 0.3, type = 'highpass', f = 1000, f2 = 0, q = 0.7, a = 0.005, rev = 0 } = {}) {
+    const ac = ctx.ac, s = ac.createBufferSource(), fl = ac.createBiquadFilter(), g = ac.createGain(); s.buffer = ctx.noiseBuf; s.loop = true;
+    fl.type = type; fl.frequency.setValueAtTime(f, t); fl.Q.value = q; if (f2) fl.frequency.exponentialRampToValueAtTime(f2, t + dur);
+    s.connect(fl).connect(g); env(g, t, a, vol, dur); out(ctx, g, bus, rev); s.start(t, Math.random()); s.stop(t + a + dur + 0.05);
+  }
+  const I = {
+    taiko(ctx, t, bus, v = 1) { osc(ctx, 'sine', 95, t, 0.55, bus, { vol: 0.9 * v, slide: 0.45, rev: 0.4 }); noise(ctx, t, 0.12, bus, { vol: 0.35 * v, type: 'lowpass', f: 700, rev: 0.3 }); },
+    tom(ctx, t, bus, v = 1) { osc(ctx, 'sine', 160, t, 0.25, bus, { vol: 0.45 * v, slide: 0.6, rev: 0.3 }); noise(ctx, t, 0.06, bus, { vol: 0.15 * v, type: 'bandpass', f: 900 }); },
+    snare(ctx, t, bus, v = 1) { noise(ctx, t, 0.16, bus, { vol: 0.32 * v, type: 'bandpass', f: 1800, q: 0.8, rev: 0.3 }); osc(ctx, 'triangle', 200, t, 0.08, bus, { vol: 0.2 * v }); },
+    hat(ctx, t, bus, v = 1) { noise(ctx, t, 0.035, bus, { vol: 0.08 * v, type: 'highpass', f: 7000 }); },
+    strings(ctx, t, m, dur, bus, v = 0.1) { for (const dt of [-9, 0, 8]) osc(ctx, 'sawtooth', mtof(m), t, dur, bus, { vol: v, a: Math.min(0.35, dur / 3), filt: 900, detune: dt, rev: 0.5 }); },
+    spicc(ctx, t, m, bus, v = 0.09) { osc(ctx, 'sawtooth', mtof(m), t, 0.11, bus, { vol: v, filt: 1600, rev: 0.25 }); },
+    brass(ctx, t, m, dur, bus, v = 0.12) {
+      for (const dt of [-6, 6]) { const ac = ctx.ac, o = ac.createOscillator(), fl = ac.createBiquadFilter(), g = ac.createGain(); o.type = 'sawtooth'; o.frequency.value = mtof(m); o.detune.value = dt;
+        fl.type = 'lowpass'; fl.Q.value = 2; fl.frequency.setValueAtTime(250, t); fl.frequency.linearRampToValueAtTime(1800, t + 0.12); fl.frequency.exponentialRampToValueAtTime(600, t + dur);
+        o.connect(fl).connect(g); env(g, t, 0.06, v, dur); out(ctx, g, bus, 0.5); o.start(t); o.stop(t + dur + 0.2); }
+    },
+    choir(ctx, t, ms, dur, bus, v = 0.05) {
+      const ac = ctx.ac, g = ac.createGain(); g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + Math.min(1.2, dur / 2)); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+      const f1 = ac.createBiquadFilter(), f2 = ac.createBiquadFilter(); f1.type = f2.type = 'bandpass'; f1.frequency.value = 750; f2.frequency.value = 1150; f1.Q.value = f2.Q.value = 5;
+      const mix = ac.createGain(); mix.connect(f1); mix.connect(f2); f1.connect(g); f2.connect(g); out(ctx, g, bus, 0.8);
+      for (const m of ms) for (const dt of [-12, 0, 11]) { const o = ac.createOscillator(); o.type = 'sawtooth'; o.frequency.value = mtof(m); o.detune.value = dt; const lfo = ac.createOscillator(), lg = ac.createGain(); lfo.frequency.value = 5 + Math.random(); lg.gain.value = 6; lfo.connect(lg).connect(o.detune); o.connect(mix); o.start(t); o.stop(t + dur + 0.1); lfo.start(t); lfo.stop(t + dur + 0.1); }
+    },
+  };
+  const CH = { Dm: [38, [62, 65, 69]], Bb: [34, [58, 62, 65]], F: [41, [60, 65, 69]], C: [36, [60, 64, 67]], A: [33, [61, 64, 69]], Gm: [43, [62, 67, 70]] };
+  const BASE = { bpm: 76, prog: ['Dm', 'Bb', 'F', 'C', 'Dm', 'Bb', 'Gm', 'A'] };
+  const BONUS = { bpm: 132, prog: ['Dm', 'C', 'Bb', 'A'] };
+
+  function scheduleTheme(ctx, bus, theme, t0, bars, intensity = 1) {
+    const sp = 60 / theme.bpm / 4; // 16th
+    let bar = 0, s = 0, t = t0;
+    const totalSteps = bars * 16;
+    for (let i = 0; i < totalSteps; i++) {
+      const ch = theme.prog[bar % theme.prog.length];
+      const [root, tri] = CH[ch];
+      const boost = intensity * (0.7 + 0.3 * (i / totalSteps)); // build
+      if (theme === BASE || theme.bpm < 100) {
+        if (s === 0) { I.strings(ctx, t, root, sp * 16, bus, 0.07 * boost); I.strings(ctx, t, root + 12, sp * 16, bus, 0.04 * boost); I.choir(ctx, t, tri, sp * 16 + 0.4, bus, 0.035 * boost); I.taiko(ctx, t, bus, 0.9 * boost); }
+        if (s === 8 || s === 10) I.taiko(ctx, t, bus, (s === 8 ? 0.7 : 0.45) * boost);
+        if (s === 6 || s === 14) I.tom(ctx, t, bus, 0.5 * boost);
+        if (bar % 2 === 1 && s === 0) I.brass(ctx, t, root + 12, sp * 7, bus, 0.07 * boost);
+        if (bar % 8 === 7 && s >= 12) I.tom(ctx, t, bus, (0.35 + (s - 12) * 0.15) * boost);
+        if (s % 2 === 0) I.spicc(ctx, t, (s / 2) % 2 ? tri[0] - 12 : root + 12, bus, 0.035 * boost);
+      } else {
+        if (s % 4 === 0) I.taiko(ctx, t, bus, (s === 0 ? 1 : 0.75) * boost);
+        if (s === 4 || s === 12) I.snare(ctx, t, bus, 0.9 * boost);
+        if (s === 14 || s === 15) I.tom(ctx, t, bus, 0.6 * boost);
+        I.hat(ctx, t, bus, (s % 2 ? 0.6 : 1) * boost);
+        I.spicc(ctx, t, (s % 4 === 2 ? root + 19 : root + 12), bus, 0.05 * boost);
+        if (s === 0 || s === 3 || s === 6) { I.brass(ctx, t, tri[0], sp * 2.2, bus, 0.08 * boost); I.brass(ctx, t, tri[2] - 12, sp * 2.2, bus, 0.06 * boost); }
+      }
+      s++; if (s >= 16) { s = 0; bar++; }
+      t += sp;
+    }
+    return t;
+  }
+
+  function pcm(buf) {
+    const L = buf.getChannelData(0), R = buf.numberOfChannels > 1 ? buf.getChannelData(1) : L;
+    return { sr: buf.sampleRate, ch: 2, left: Array.from(L), right: Array.from(R), duration: buf.duration };
+  }
+
+  // ---- music bed 45s: base build -> crossfade to bonus climax -> clean ending ----
+  {
+    const ctx = makeCtx(45.5);
+    const gBase = ctx.ac.createGain(); gBase.connect(ctx.musicBus); gBase.gain.value = 1;
+    const gBonus = ctx.ac.createGain(); gBonus.connect(ctx.musicBus); gBonus.gain.value = 0.0001;
+    // 0-28s base, building
+    scheduleTheme(ctx, gBase, BASE, 0, Math.ceil(28 / (60 / BASE.bpm * 4)), 1);
+    // crossfade 26-30s into bonus
+    gBase.gain.setValueAtTime(1, 26); gBase.gain.linearRampToValueAtTime(0.0001, 30);
+    gBonus.gain.setValueAtTime(0.0001, 26); gBonus.gain.linearRampToValueAtTime(1, 30);
+    scheduleTheme(ctx, gBonus, BONUS, 26, Math.ceil(16 / (60 / BONUS.bpm * 4)), 1.15);
+    // climax hit + clean fade 42-45
+    I.taiko(ctx, 41.5, ctx.sfxBus, 1.2); I.brass(ctx, 41.5, 50, 1.2, ctx.sfxBus, 0.16);
+    I.choir(ctx, 41.2, [62, 66, 69, 74], 3.2, ctx.sfxBus, 0.1);
+    gBonus.gain.setValueAtTime(1, 42); gBonus.gain.linearRampToValueAtTime(0.0001, 45);
+    ctx.musicBus.gain.setValueAtTime(0.42, 42); ctx.musicBus.gain.linearRampToValueAtTime(0.0001, 45);
+    const bed = await ctx.ac.startRendering();
+    window.__bed = pcm(bed);
+  }
+
+  // ---- one-shots ----
+  async function oneshot(secs, schedule) {
+    const ctx = makeCtx(secs);
+    schedule(ctx);
+    return pcm(await ctx.ac.startRendering());
+  }
+  window.__spin = await oneshot(1.4, ctx => {
+    noise(ctx, 0.05, 0.75, ctx.sfxBus, { vol: 0.28, type: 'bandpass', f: 300, f2: 2400, q: 1.2, a: 0.3 });
+    I.taiko(ctx, 0.55, ctx.sfxBus, 0.85);
+    osc(ctx, 'sine', 85, 0.7, 0.28, ctx.sfxBus, { vol: 0.7, slide: 0.5 });
+  });
+  window.__win = await oneshot(2.2, ctx => {
+    [0, 4, 7, 12].forEach((s, i) => osc(ctx, 'triangle', mtof(74 + s), 0.05 + i * 0.08, 0.35, ctx.sfxBus, { vol: 0.14, rev: 0.5 }));
+    for (let k = 0; k < 10; k++) { const tt = 0.2 + Math.random() * 0.8, f = 2400 + Math.random() * 2400; osc(ctx, 'sine', f, tt, 0.18, ctx.sfxBus, { vol: 0.05, a: 0.002 }); }
+    I.taiko(ctx, 0.05, ctx.sfxBus, 0.6);
+  });
+  window.__clash = await oneshot(1.6, ctx => {
+    for (const f of [1230, 2710, 3950, 5300, 6900]) osc(ctx, 'sine', f * (0.97 + Math.random() * 0.06), 0.05, 0.55, ctx.sfxBus, { vol: 0.08, a: 0.002, rev: 0.5 });
+    noise(ctx, 0.05, 0.12, ctx.sfxBus, { vol: 0.4, type: 'highpass', f: 2500 });
+    osc(ctx, 'sine', 70, 0.08, 0.4, ctx.sfxBus, { vol: 0.85, slide: 0.5 });
+    noise(ctx, 0.08, 0.25, ctx.sfxBus, { vol: 0.45, type: 'lowpass', f: 900, f2: 200 });
+  });
+  window.__grand = await oneshot(5.5, ctx => {
+    ctx.duckGain.gain.setValueAtTime(0.25, 0.05); ctx.duckGain.gain.setTargetAtTime(1, 2.2, 0.5);
+    I.taiko(ctx, 0.05, ctx.sfxBus, 1.1); I.brass(ctx, 0.05, 50, 0.6, ctx.sfxBus, 0.16);
+    const ch = [62, 66, 69, 74];
+    [0, 5, 7].forEach((s, i) => ch.forEach(m => I.brass(ctx, 0.3 + i * 0.22, m + s - 12, 0.35 + (i === 2 ? 1.4 : 0), ctx.sfxBus, 0.07)));
+    I.choir(ctx, 0.8, ch.slice(0, 3), 3.2, ctx.sfxBus, 0.1);
+    for (let k = 0; k < 10; k++) I.taiko(ctx, 0.85 + k * 0.11, ctx.sfxBus, 0.5 + k * 0.05);
+    noise(ctx, 1.0, 1.0, ctx.sfxBus, { vol: 0.45, type: 'lowpass', f: 300, f2: 1600, a: 0.15, rev: 0.4 });
+    I.strings(ctx, 0.9, 38, 3.5, ctx.sfxBus, 0.07);
+    for (let k = 0; k < 40; k++) { const tt = 0.6 + Math.random() * 2.5, f = 2400 + Math.random() * 2400; osc(ctx, 'sine', f, tt, 0.18, ctx.sfxBus, { vol: 0.045, a: 0.002 }); }
+  });
+
+  return {
+    bed: window.__bed,
+    spin: window.__spin,
+    win: window.__win,
+    clash: window.__clash,
+    grand: window.__grand,
+  };
+};
+</script>
+<body>Trailer offline render ready. Call <code>renderTrailer()</code>.</body>

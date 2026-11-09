@@ -9,7 +9,7 @@ let forceBonus = fb ? (fb === 'win' || fb === 'laststand' ? 3 : Math.min(5, Math
 let forceDuel = fb === 'win' ? { won: true } : fb === 'laststand' ? { won: false } : {};
 if (qs.get('freeSpins')) forceDuel.fs = +qs.get('freeSpins');
 const MOVES = { strike: { label: 'STRIKE', icon: '⚔' }, guard: { label: 'GUARD', icon: '🛡' }, fury: { label: 'FURY', icon: '🔥' } };
-const MOVE_AUTO_MS = 5000;
+const MOVE_AUTO_MS = 8000;   // visible countdown; turbo/demo use a shorter auto-pick
 const BETS = [1, 2, 5, 10, 20, 50], START = 1000;
 const TIERS = [[50, 'epic', 3], [25, 'mega', 2], [10, 'big', 1]];            // win x bet thresholds -> title art / fanfare tier
 const HERO_COLORS = { eldenvale: '#3fd46a', northgard: '#4a8cff', solenthia: '#ffc531', vellorien: '#b45cff', drakonia: '#ff3b30' };
@@ -401,9 +401,11 @@ async function runBonus(count) {
   }
   state.dragon = false;
   const B = bet(); let duelWin = 0, fsWin = 0;
+  // tear down the duel HUD / skip / speedhint so they cannot show through the payout overlay
+  const clearDuelChrome = () => { c.querySelector('#duel')?.remove(); c.querySelectorAll('.skip,.speedhint').forEach(e => e.remove()); c.onclick = null; };
   if (outcome.won) {
     // 6a. victory: the duel pays bet x multiplier, and the multiplier carries into Spoils of War
-    phase('total');
+    phase('total'); clearDuelChrome();
     duelWin = Math.round(B * outcome.total * 100) / 100;
     c.insertAdjacentHTML('beforeend', `<div class="total" id="total"><div class="vic"></div><h2 class="ctitle" style="font-size:clamp(34px,10vw,64px);animation:none">VICTORY!</h2>
       <div class="amt" id="bonusAmt">0</div><div class="calc">Bet ${B} × x${outcome.total} = ${fmt(duelWin)} demo credits</div>
@@ -420,7 +422,7 @@ async function runBonus(count) {
     fsWin = await runFreeSpins(outcome.fs, B);
   } else {
     // 6c. Last Stand consolation - the bonus never pays zero
-    phase('lastStand');
+    phase('lastStand'); clearDuelChrome();
     duelWin = Math.round(B * outcome.lastStand * 100) / 100;
     c.insertAdjacentHTML('beforeend', `<div class="total laststand" id="total"><div class="vic"></div><h2 class="ctitle" style="font-size:clamp(30px,9vw,58px);animation:none">LAST STAND</h2>
       <p class="lsnote">Your champion fell, but the kingdom honours their courage.</p>
@@ -440,22 +442,34 @@ async function runBonus(count) {
   setBalance(state.balance + win);
   addHistory(win, outcome.won ? `Clash of Crowns x${outcome.total} + ${outcome.fsN} free spins (${h.name.split(' ')[0]})` : `Last Stand (${h.name.split(' ')[0]})`);
   banner(`BONUS WIN ${fmt(win)}`); state.inBonus = false; ui();
+  // the triggering spin is finished: clear win lines and settle the War Banners (no re-highlight)
+  clearWins();
+  document.querySelectorAll('#reels .cell.banner,#reels .cell.bflash').forEach(el => { el.classList.remove('banner', 'bflash'); el.classList.add('settled'); });
   $('status').textContent = `Clash of Crowns paid ${fmt(win)} demo credits.`;
   phase('done');
 }
 function chooseMove() {
+  // Skip only speeds duel animations (bsleep); it must NOT auto-resolve the move. Turbo / ?demo=1 keep a shorter timer.
   const box = $('moves'); box.classList.remove('hidden'); A.sfx.click();
   const bar = $('mtimer'); bar.style.transition = 'none'; bar.style.width = '100%'; void bar.offsetWidth;
-  const ms = bctl.skip ? 0 : MOVE_AUTO_MS; bar.style.transition = `width ${ms}ms linear`; bar.style.width = '0%';
+  const ms = RM ? 400 : (DEMO || state.turbo) ? 1500 : MOVE_AUTO_MS;
+  bar.style.transition = `width ${ms}ms linear`; bar.style.width = '0%';
+  // pause the global skip while the player chooses, so a prior Skip press cannot zero this wait
+  const heldSkip = bctl.skip; bctl.skip = false;
   return new Promise(res => {
-    const done = k => { clearTimeout(tm); box.classList.add('hidden'); box.querySelectorAll('button').forEach(b => b.onclick = null); res(k); };
-    const keys = Object.keys(MOVES), tm = setTimeout(() => done(keys[Math.floor(Math.random() * 3)]), ms);   // cosmetic auto-pick
+    const done = k => { clearTimeout(tm); bctl.skip = heldSkip; box.classList.add('hidden'); box.querySelectorAll('button').forEach(b => b.onclick = null); res(k); };
+    const keys = Object.keys(MOVES), tm = setTimeout(() => done(keys[Math.floor(Math.random() * 3)]), ms);
     box.querySelectorAll('[data-move]').forEach(b => b.onclick = e => { e.stopPropagation(); b.classList.add('picked'); setTimeout(() => b.classList.remove('picked'), 300); done(b.dataset.move); });
   });
 }
 // Spoils of War: replays the pre-drawn free spins on the main reels (sticky crests, every win x multiplier), then the tally
 async function runFreeSpins(fs, B) {
-  const hud = $('fsHud'); hud.classList.remove('hidden'); document.body.classList.add('fsmode'); A.theme('bonus');
+  const hud = $('fsHud'); 
+  // pin the HUD over the ladder's bounding box so the control row cannot shift
+  const placeHud = () => { const L = $('ladder'); if (!L) return; const r = L.getBoundingClientRect(); hud.style.top = (r.top + scrollY) + 'px'; hud.style.width = r.width + 'px'; };
+  hud.classList.remove('hidden'); document.body.classList.add('fsmode'); placeHud();
+  const onR = () => placeHud(); addEventListener('resize', onR);
+  A.theme('bonus');
   let total = 0; const set = (i) => { hud.innerHTML = `<div><small>FREE SPIN</small><b id="fsCount">${i} / ${fs.n}</b></div><div class="fsm"><small>MULTIPLIER</small><b>x${fs.mult}</b></div><div><small>SPOILS</small><b id="fsTotal">${fmt(total)}</b></div>`; };
   set(0); clearWins(); await sleep(RM ? 100 : 500);
   for (let i = 0; i < fs.spins.length; i++) {
@@ -485,7 +499,7 @@ async function runFreeSpins(fs, B) {
   await FX.countUp($('tallyAmt'), 0, grand, RM ? 200 : 1800, fmt, () => A.sfx.tick(), cu);
   window.__game.fsTally = { total, grand, tier: tier ? tier[1] : null };
   await new Promise(res => { $('collect').onclick = e => { e.stopPropagation(); res(); }; });
-  hud.classList.add('hidden'); document.body.classList.remove('fsmode'); document.querySelectorAll('.cell.sticky').forEach(x => x.classList.remove('sticky', 'stuck'));
+  hud.classList.add('hidden'); document.body.classList.remove('fsmode'); removeEventListener('resize', onR); hud.style.top = hud.style.width = ''; document.querySelectorAll('.cell.sticky').forEach(x => x.classList.remove('sticky', 'stuck'));
   return total;
 }
 
@@ -504,32 +518,44 @@ async function runJackpot(jp, b) {
   phase('pick');
   const tiles = [...c.querySelectorAll('.tile')], counts = { mini: 0, minor: 0, major: 0, grand: 0 };
   const flip = (tile, t, dim) => { const f = tile.querySelector('.front'); f.src = `assets/jackpot/tile_${t}.webp`; f.alt = t; tile.dataset.t = t; tile.style.setProperty('--c', JP_COLORS[t]); tile.classList.add('flipped'); if (dim) tile.classList.add('dim'); tile.disabled = true; };
-  let k = 0;
+  let k = 0, matched = false;
   await new Promise(res => tiles.forEach(tile => tile.onclick = e => {
-    e.stopPropagation(); if (tile.disabled || k >= jp.reveal.length) return;
+    e.stopPropagation(); if (tile.disabled || matched || k >= jp.reveal.length) return;
     const t = jp.reveal[k++]; flip(tile, t); counts[t]++; A.sfx.clash();
     const pl = c.querySelector(`.jplaques .plq[data-t="${t}"]`); pl.querySelectorAll('.pips i').forEach((p, j) => p.classList.toggle('on', j < counts[t]));
     pl.classList.remove('bump'); void pl.offsetWidth; pl.classList.add('bump');
-    if (k === jp.reveal.length) res();
+    // stop on the first triple (the predetermined tier). Never award with fewer than 3 of that tier showing.
+    if (counts[t] >= 3) { matched = true; res(); }
   }));
-  // three matched: glow the plaque + matched tiles, then reveal the rest
+  // guarantee exactly 3 of the winning tier are face-up before we celebrate (covers any missed flip)
+  while (tiles.filter(t => t.dataset.t === jp.tier).length < 3 && k < jp.reveal.length) {
+    const tile = tiles.find(t => !t.disabled); if (!tile) break;
+    const t = jp.reveal[k++]; flip(tile, t); counts[t]++; 
+    const plx = c.querySelector(`.jplaques .plq[data-t="${t}"]`); plx.querySelectorAll('.pips i').forEach((p, j) => p.classList.toggle('on', j < counts[t]));
+  }
   phase('match');
+  const winners = tiles.filter(t => t.dataset.t === jp.tier);
+  if (winners.length !== 3) console.warn('jackpot match expected 3 tiles of', jp.tier, 'got', winners.length);
   const pl = c.querySelector(`.jplaques .plq[data-t="${jp.tier}"]`); pl.classList.add('won');
-  tiles.filter(t => t.dataset.t === jp.tier).forEach(t => t.classList.add('match'));
+  winners.forEach(t => t.classList.add('match'));
   A.sfx.fanfare(JP_LEVEL[jp.tier]); FX.flash(JP_COLORS[jp.tier], 450, 0.7); FX.coins(40 + JP_LEVEL[jp.tier] * 60, 'burst');
   await sleep(RM ? 200 : 900);
   phase('reveal');
-  let ri = 0; for (const tile of tiles) if (!tile.disabled) { flip(tile, jp.rest[ri++], true); await sleep(RM ? 0 : 70); }
+  // unconsumed reveal entries (picks after the winning triple) still need to be shown face-up with the rest
+  const pool = [...jp.reveal.slice(k), ...jp.rest];
+  let ri = 0; for (const tile of tiles) if (!tile.disabled) { flip(tile, pool[ri++], true); await sleep(RM ? 0 : 70); }
   await sleep(RM ? 200 : 700);
   const win = Math.round(jp.x * b * 100) / 100;
   phase('award');
-  if (jp.tier === 'grand') { await celebrate(TIERS[0], win); }   // full platinum celebration
+  // dedicated jackpot celebration only - do NOT run the generic Big/Mega/Epic banner over the board
+  c.querySelectorAll('.skip,.speedhint').forEach(e => e.remove()); c.onclick = null;
   c.insertAdjacentHTML('beforeend', `<div class="total jptotal" id="jpTotal" style="--c:${JP_COLORS[jp.tier]}"><div class="plq jpwon"><img src="assets/jackpot/plaque_${jp.tier}.webp" alt="${jp.tier.toUpperCase()}"><b>${fmt(win)}</b></div><div class="amt" id="jpAmt">0</div>
     <div class="calc">${jp.tier.toUpperCase()} JACKPOT · bet ${b} × ${jp.x} = ${fmt(win)} demo credits</div><button class="big" id="jpCollect">COLLECT</button></div>`);
-  A.sfx.fanfare(JP_LEVEL[jp.tier]); FX.coins(60 + JP_LEVEL[jp.tier] * 60, 'shower');
+  A.sfx.fanfare(JP_LEVEL[jp.tier]); A.duck(0.3, 2); FX.flash(JP_COLORS[jp.tier], 500, 0.75);
+  FX.coins(50 + JP_LEVEL[jp.tier] * 70, 'shower'); if (jp.tier === 'grand') FX.coins(80, 'burst');
   const cu = {}; c.onclick = () => { cu.skip = true; };
   await FX.countUp($('jpAmt'), 0, win, RM ? 200 : 1000 + JP_LEVEL[jp.tier] * 500, fmt, () => A.sfx.tick(), cu);
-  window.__game.lastJackpot = { tier: jp.tier, x: jp.x, win, reveal: jp.reveal, rest: jp.rest };
+  window.__game.lastJackpot = { tier: jp.tier, x: jp.x, win, reveal: jp.reveal, rest: jp.rest, matched: winners.length };
   await new Promise(res => { $('jpCollect').onclick = e => { e.stopPropagation(); res(); }; });
   phase('return');
   c.onclick = null; c.insertAdjacentHTML('beforeend', '<div class="gate l"></div><div class="gate r"></div>'); A.sfx.gates(); A.theme('base');
